@@ -11,7 +11,7 @@ import torch as tc
 from numpy.linalg import eig
 from scipy.io import loadmat
 
-from Library.tools import gates_list, name2matrix
+from .Tools import gates_list, name2matrix
 
 __all__ = [
     'czExp_channel',

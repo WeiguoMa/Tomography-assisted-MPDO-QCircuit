@@ -1,13 +1,13 @@
 """
 Author: weiguo_ma
-Time: 11.27.2023
+Time: 11.24.2024
 Contact: weiguo.m@iphy.ac.cn
 """
 
 from abc import ABC, abstractmethod
-from typing import Union, List, Optional
+from typing import Optional
 
-from torch import Tensor, nn
+from torch import Tensor, nn, complex64, tensor
 
 
 class QuantumGate(ABC, nn.Module):
@@ -15,19 +15,22 @@ class QuantumGate(ABC, nn.Module):
     Base class for quantum gates.
     """
 
-    def __init__(self, ideal: Optional[bool] = True):
+    def __init__(self, ideal: Optional[bool] = True, dtype=complex64, device: str = 'cpu'):
         super(QuantumGate, self).__init__()
+        self.para = None
         self._ideal = ideal
-        self._para = None
+        self.dtype, self.device = dtype, device
 
-    @staticmethod
-    def _check_Para_Tensor(_parameters: Union[Tensor, List[Tensor]]):
-        if not isinstance(_parameters, List):
-            _parameters = [_parameters]  # Convert to a list for uniform processing
+    def _check_Para_Tensor(self, *parameters):
+        def __convert(param):
+            if isinstance(param, Tensor):
+                return param.to(dtype=self.dtype, device=self.device)
+            elif isinstance(param, float):
+                return tensor(param, dtype=self.dtype, device=self.device)
+            raise ValueError(f"Invalid type for gate parameter: {type(param)}")
 
-        for param in _parameters:
-            if not isinstance(param, Tensor):
-                raise ValueError("All parameters must be of type Tensor.")
+        params = [__convert(param) for param in parameters]
+        return params if len(parameters) > 1 else params[0]
 
     @property
     @abstractmethod

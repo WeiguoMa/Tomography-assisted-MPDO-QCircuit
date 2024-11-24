@@ -4,24 +4,39 @@ Time: 04.07.2023
 Contact: weiguo.m@iphy.ac.cn
 """
 import itertools
-import random
-import string
 import warnings
 from copy import deepcopy
 from functools import reduce
-from typing import Optional, List, Union, Dict
+from typing import Optional, List, Union, Dict, cast
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-import tensornetwork as tn
-import torch as tc
 from scipy.optimize import minimize
+from tensornetwork import AbstractNode, Node
+from torch import complex64, sqrt, einsum, matmul, trace, cuda, zeros, kron, where, real, eye, diag, Tensor
+from torch import tensor as torch_tensor
+from torch.linalg import eigh as torch_eigh
+from torch.linalg import eigvalsh
 
 mpl.rcParams['font.family'] = 'Arial'
 
+__all__ = [
+    'create_ket0Series',
+    'create_ket1Series',
+    'create_ketPlusSeries',
+    'create_ketMinusSeries',
+    'create_ketRandomSeries',
+    'create_ketHadamardSeries',
+    'plot_histogram',
+    'density2prob',
+    'select_device',
+    'tc_expect',
+    'EdgeName2AxisName'
+]
 
-def EdgeName2AxisName(_nodes: List[tn.AbstractNode]):
+
+def EdgeName2AxisName(_nodes: List[AbstractNode]):
     r"""
     ProcessFunction -->
         In tensornetwork package, axis_name is not equal to _name_of_edge_. While calculating, to ensure that
@@ -33,10 +48,10 @@ def EdgeName2AxisName(_nodes: List[tn.AbstractNode]):
     Returns:
         None, but the axis_names of _nodes will be set in memory.
     """
-    if not isinstance(_nodes, List):
-        if not isinstance(_nodes, tn.AbstractNode):
-            raise ValueError('The input should be a list of nodes.')
+    if isinstance(_nodes, AbstractNode):
         _nodes = [_nodes]
+    elif not isinstance(_nodes, list) or not all(isinstance(_node, AbstractNode) for _node in _nodes):
+        raise ValueError("Input must be a node or a list of nodes.")
 
     for _node in _nodes:
         _axis_names = []
@@ -44,10 +59,11 @@ def EdgeName2AxisName(_nodes: List[tn.AbstractNode]):
             # hardcode, which is relating to code design from weiguo
             if 'qr' in _edge.name:
                 _edge.set_name(_edge.name.replace('qr', ''))
+            if 'kp' in _edge.name:
+                _edge.set_name(_edge.name.replace('kp', ''))
             if 'bond_' in _edge.name:  # Fact that 'bond_a_b' is the same as 'bond_b_a'
-                _split = _edge.name.split('_')
-                if int(_split[1]) > int(_split[2]):
-                    _edge.name = f'bond_{_split[2]}_{_split[1]}'
+                _s, _b = sorted([int(num) for num in _edge.name.split('_')[1:]])
+                _edge.set_name(f'bond_{_s}_{_b}')
             _axis_names.append(_edge.name)
         _node.axis_names = _axis_names
 
@@ -56,38 +72,38 @@ def ket0(dtype, device: Union[str, int] = 'cpu'):
     r"""
     Return: Return the state |0>
     """
-    return tc.tensor([1. + 0.j, 0. + 0.j], dtype=dtype, device=device)
+    return torch_tensor([1. + 0.j, 0. + 0.j], dtype=dtype, device=device)
 
 
 def ket1(dtype, device: Union[str, int] = 'cpu'):
     r"""
     Return: Return the state |1>
     """
-    return tc.tensor([0. + 0.j, 1. + 0.j], dtype=dtype, device=device)
+    return torch_tensor([0. + 0.j, 1. + 0.j], dtype=dtype, device=device)
 
 
 def ket_hadamard(dtype, device: Union[str, int] = 'cpu'):
     r"""
     Return: Return the state |+>
     """
-    return tc.tensor([1. / tc.sqrt(tc.tensor(2.)), 1. / tc.sqrt(tc.tensor(2.))], dtype=dtype, device=device)
+    return torch_tensor([1. / sqrt(torch_tensor(2.)), 1. / sqrt(torch_tensor(2.))], dtype=dtype, device=device)
 
 
 def ket_plus(dtype, device: Union[str, int] = 'cpu'):
     r"""
     Return: Return the state |+>
     """
-    return tc.tensor([1. / tc.sqrt(tc.tensor(2.)), 1. / tc.sqrt(tc.tensor(2.))], dtype=dtype, device=device)
+    return torch_tensor([1. / sqrt(torch_tensor(2.)), 1. / sqrt(torch_tensor(2.))], dtype=dtype, device=device)
 
 
 def ket_minus(dtype, device: Union[str, int] = 'cpu'):
     r"""
     Return: Return the state |->
     """
-    return tc.tensor([1. / tc.sqrt(tc.tensor(2.)), -1. / tc.sqrt(tc.tensor(2.))], dtype=dtype, device=device)
+    return torch_tensor([1. / sqrt(torch_tensor(2.)), -1. / sqrt(torch_tensor(2.))], dtype=dtype, device=device)
 
 
-def create_ket0Series(qnumber: int, dtype=tc.complex64, device: Union[str, int] = 'cpu') -> list:
+def create_ket0Series(qnumber: int, dtype=complex64, device: Union[str, int] = 'cpu') -> list:
     r"""
     create initial qubits
 
@@ -101,14 +117,14 @@ def create_ket0Series(qnumber: int, dtype=tc.complex64, device: Union[str, int] 
     """
 
     _mps = [
-        tn.Node(ket0(dtype, device=device), name='qubit_{}'.format(_ii),
-                axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
+        Node(ket0(dtype, device=device), name='qubit_{}'.format(_ii),
+             axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
     ]
     # Initial nodes has no edges need to be connected, which exactly cannot be saying as a MPO.
     return _mps
 
 
-def create_ket1Series(qnumber: int, dtype=tc.complex64, device: Union[str, int] = 'cpu') -> list:
+def create_ket1Series(qnumber: int, dtype=complex64, device: Union[str, int] = 'cpu') -> list:
     r"""
     create initial qubits
 
@@ -122,14 +138,14 @@ def create_ket1Series(qnumber: int, dtype=tc.complex64, device: Union[str, int] 
     """
 
     _mps = [
-        tn.Node(ket1(dtype, device=device), name='qubit_{}'.format(_ii),
-                axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
+        Node(ket1(dtype, device=device), name='qubit_{}'.format(_ii),
+             axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
     ]
     # Initial nodes has no edges need to be connected, which exactly cannot be saying as a MPO.
     return _mps
 
 
-def create_ketHadamardSeries(qnumber: int, dtype=tc.complex64, device: Union[str, int] = 'cpu') -> list:
+def create_ketHadamardSeries(qnumber: int, dtype=complex64, device: Union[str, int] = 'cpu') -> list:
     r"""
     create initial qubits
 
@@ -143,14 +159,14 @@ def create_ketHadamardSeries(qnumber: int, dtype=tc.complex64, device: Union[str
     """
 
     _mps = [
-        tn.Node(ket_hadamard(dtype, device=device), name='qubit_{}'.format(_ii),
-                axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
+        Node(ket_hadamard(dtype, device=device), name='qubit_{}'.format(_ii),
+             axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
     ]
     # Initial nodes has no edges need to be connected, which exactly cannot be saying as a MPO.
     return _mps
 
 
-def create_ketPlusSeries(qnumber: int, dtype=tc.complex64, device: Union[str, int] = 'cpu') -> list:
+def create_ketPlusSeries(qnumber: int, dtype=complex64, device: Union[str, int] = 'cpu') -> list:
     r"""
     create initial qubits
 
@@ -164,14 +180,14 @@ def create_ketPlusSeries(qnumber: int, dtype=tc.complex64, device: Union[str, in
     """
 
     _mps = [
-        tn.Node(ket_plus(dtype, device=device), name='qubit_{}'.format(_ii),
-                axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
+        Node(ket_plus(dtype, device=device), name='qubit_{}'.format(_ii),
+             axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
     ]
     # Initial nodes has no edges need to be connected, which exactly cannot be saying as a MPO.
     return _mps
 
 
-def create_ketMinusSeries(qnumber: int, dtype=tc.complex64, device: Union[str, int] = 'cpu') -> list:
+def create_ketMinusSeries(qnumber: int, dtype=complex64, device: Union[str, int] = 'cpu') -> list:
     r"""
     create initial qubits
 
@@ -185,14 +201,14 @@ def create_ketMinusSeries(qnumber: int, dtype=tc.complex64, device: Union[str, i
     """
 
     _mps = [
-        tn.Node(ket_minus(dtype, device=device), name='qubit_{}'.format(_ii),
-                axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
+        Node(ket_minus(dtype, device=device), name='qubit_{}'.format(_ii),
+             axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
     ]
     # Initial nodes has no edges need to be connected, which exactly cannot be saying as a MPO.
     return _mps
 
 
-def create_ketRandomSeries(qnumber: int, tensor: tc.Tensor, dtype=tc.complex64,
+def create_ketRandomSeries(qnumber: int, tensor: torch_tensor, dtype=complex64,
                            device: Union[str, int] = 'cpu') -> list:
     r"""
     create initial qubits
@@ -209,14 +225,14 @@ def create_ketRandomSeries(qnumber: int, tensor: tc.Tensor, dtype=tc.complex64,
 
     tensor = tensor.to(dtype=dtype, device=device)
     _mps = [
-        tn.Node(tensor, name='qubit_{}'.format(_ii),
-                axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
+        Node(tensor, name='qubit_{}'.format(_ii),
+             axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
     ]
     # Initial nodes has no edges need to be connected, which exactly cannot be saying as a MPO.
     return _mps
 
 
-def tc_expect(oper: tc.Tensor, state: tc.Tensor) -> tc.Tensor:
+def tc_expect(oper: torch_tensor, state: torch_tensor) -> torch_tensor:
     """
         Calculates the expectation value for operator(s) and state(s) in PyTorch,
         using torch.matmul for matrix multiplication.
@@ -237,39 +253,37 @@ def tc_expect(oper: tc.Tensor, state: tc.Tensor) -> tc.Tensor:
 
     def _single_expect(o, s):
         if s.dim() == 1:  # State vector (ket)
-            return tc.einsum('i, ij, j', s.conj(), o, s)
+            return einsum('i, ij, j', s.conj(), o, s)
         elif s.dim() == 2:  # Density matrix
-            return tc.trace(tc.matmul(o, s))
+            return trace(matmul(o, s))
         else:
             raise ValueError("State must be a vector or matrix.")
 
     # Handling a single operator and state
-    if isinstance(oper, tc.Tensor) and isinstance(state, tc.Tensor):
+    if isinstance(oper, Tensor) and isinstance(state, Tensor):
         return _single_expect(oper, state)
 
     # Handling a list of operators
-    elif isinstance(oper, (list, tc.Tensor)):
-        if isinstance(state, tc.Tensor):
-            return tc.tensor([_single_expect(o, state) for o in oper], dtype=tc.complex64)
+    elif isinstance(oper, (list, torch_tensor)):
+        if isinstance(state, Tensor):
+            return torch_tensor([_single_expect(o, state) for o in oper], dtype=complex64)
 
     # Handling a list of states
-    elif isinstance(state, (list, tc.Tensor)):
-        return tc.tensor([_single_expect(oper, x) for x in state], dtype=tc.complex64)
+    elif isinstance(state, (list, torch_tensor)):
+        return torch_tensor([_single_expect(oper, x) for x in state], dtype=complex64)
 
     else:
         raise TypeError('Arguments must be torch.Tensors or lists thereof')
 
 
-def density2prob(rho_in: tc.Tensor,
-                 bases: Optional[Dict] = None,
-                 tol: Optional[float] = None,
-                 _dict: Optional[bool] = True) -> Union[Dict, np.ndarray]:
+def density2prob(rho_in: torch_tensor, bases: Optional[Dict] = None,
+                 tol: Optional[float] = None, _dict: Optional[bool] = True) -> Union[Dict, np.ndarray]:
     """
     Transform density matrix into probability distribution with provided bases.
 
     Args:
         rho_in: density matrix;
-        bases: basis set, should be input as a dict with format {'Bases': List[tc.Tensor], 'BasesName': List[str]};
+        bases: basis set, should be input as a dict with format {'Bases': List[torch_tensor], 'BasesName': List[str]};
         tol: probability under this threshold will not be shown;
         _dict: return a dict or np.array.
     """
@@ -277,7 +291,7 @@ def density2prob(rho_in: tc.Tensor,
 
     if bases is None:
         # Generate basis states
-        _view_basis = [tc.zeros((2 ** _qn, 1), dtype=tc.complex64).scatter_(0, tc.tensor([[ii]]), 1) for ii in
+        _view_basis = [zeros((2 ** _qn, 1), dtype=complex64).scatter_(0, torch_tensor([[ii]]), 1) for ii in
                        range(2 ** _qn)]
         # Generate basis names
         _basis_name = [''.join(ii) for ii in itertools.product('01', repeat=_qn)]
@@ -286,11 +300,11 @@ def density2prob(rho_in: tc.Tensor,
             _view_basis, _basis_name = bases['Bases'], bases['BasesName']
         except ValueError:
             raise ValueError(
-                'The input bases should be a dict with format {\'Bases\': List[tc.Tensor], \'BasesName\': List[str]}'
+                'The input bases should be a dict with format {\'Bases\': List[torch_tensor], \'BasesName\': List[str]}'
             )
 
     # Calculate probabilities
-    _prob = [tc.abs(tc_expect(rho_in, base.view(-1))).item() for base in _view_basis]
+    _prob = [abs(tc_expect(rho_in, base.view(-1))).item() for base in _view_basis]
 
     # Create dictionary and normalize
     _prob_sum = sum(_prob)
@@ -329,7 +343,7 @@ def plot_histogram(prob_psi: Union[Dict, np.ndarray],
         qnumber = int(np.log2(prob_psi.shape[0]))
         _basis_name = [''.join(ii) for ii in itertools.product('01', repeat=qnumber)]
         _prob_distribution = [v for v in prob_psi if v >= threshold]
-        _basis_name = [_basis_name[i] for i, v in enumerate(prob_psi) if v >= threshold]
+        _basis_name = [_basis_name[i] for i, v in enumerate(prob_psi) if cast(v, float) >= threshold]
     else:
         raise TypeError('Prob distribution should be input as a dict, or np.array.')
 
@@ -401,14 +415,14 @@ def plot_histogram_multiBars(
     def extract_data(prob_psi):
         if isinstance(prob_psi, Dict):
             basis_name = list(prob_psi.keys())
-            prob_distribution = list(prob_psi.values())
+            _prob_distribution = list(prob_psi.values())
         elif isinstance(prob_psi, np.ndarray):
             qnumber = int(np.log2(prob_psi.shape[0]))
-            prob_distribution = prob_psi
+            _prob_distribution = prob_psi
             basis_name = [''.join(ii) for ii in itertools.product('01', repeat=qnumber)]
         else:
             raise TypeError('Prob distribution should be input as a dict or np.array.')
-        return basis_name, prob_distribution
+        return basis_name, _prob_distribution
 
     if not threshold:
         threshold = 0.
@@ -417,7 +431,7 @@ def plot_histogram_multiBars(
     distributions = [extract_data(data) for data in datasets if data is not None]
 
     if labels is None:
-        labels = [f'Dataset {i+1}' for i in range(len(distributions))]
+        labels = [f'Dataset {i + 1}' for i in range(len(distributions))]
 
     basis_names = [d[0] for d in distributions]
     prob_distributions = [d[1] for d in distributions]
@@ -477,7 +491,7 @@ def select_device(device: Optional[Union[str, int]] = None):
     if isinstance(device, str):
         return device
     else:
-        if tc.cuda.is_available():
+        if cuda.is_available():
             if device is None:
                 return 'cuda:0'
             else:
@@ -485,26 +499,6 @@ def select_device(device: Optional[Union[str, int]] = None):
         else:
             warnings.warn('CUDA is not available, use CPU instead.')
             return 'cpu'
-
-
-def generate_random_string_without_duplicate(_n: int):
-    r"""
-    Generate a random string without duplicate characters.
-
-    Args:
-        _n: The length of the string.
-
-    Returns:
-        _str: The random string.
-    """
-
-    def _generate_random_string(_n_):
-        return ''.join(random.choices(string.ascii_lowercase, k=_n_))
-
-    _str = _generate_random_string(_n)
-    while len(_str) != len(set(_str)):
-        _str = _generate_random_string(_n)
-    return _str
 
 
 def gates_list(N: int, basis_gates: Optional[List[str]] = None) -> List[str]:
@@ -529,7 +523,7 @@ def gates_list(N: int, basis_gates: Optional[List[str]] = None) -> List[str]:
     return [''.join(gates) for gates in itertools.product(basis_gates, repeat=N)]
 
 
-def name2matrix(operation_name: str, dtype=tc.complex64, device: Union[str, int] = 'cpu'):
+def name2matrix(operation_name: str, dtype=complex64, device: Union[str, int] = 'cpu'):
     """
     Generate a product matrix for a given operation sequence.
 
@@ -543,20 +537,20 @@ def name2matrix(operation_name: str, dtype=tc.complex64, device: Union[str, int]
     """
     # Define the operation matrices
     operations = {
-        'I': tc.eye(2, dtype=dtype, device=device),
-        'X': tc.tensor([[0, 1], [1, 0]], dtype=dtype, device=device),
-        'Y': -1j * tc.tensor([[0, -1j], [1j, 0]], dtype=dtype, device=device),
-        'Z': tc.tensor([[1, 0], [0, -1]], dtype=dtype, device=device)
+        'I': eye(2, dtype=dtype, device=device),
+        'X': torch_tensor([[0, 1], [1, 0]], dtype=dtype, device=device),
+        'Y': -1j * torch_tensor([[0, -1j], [1j, 0]], dtype=dtype, device=device),
+        'Z': torch_tensor([[1, 0], [0, -1]], dtype=dtype, device=device)
     }
 
     # Generate the list of operation matrices
     operation_list = [operations[letter] for letter in operation_name]
 
     # Compute the tensor product of the matrices
-    return reduce(tc.kron, operation_list)
+    return reduce(kron, operation_list)
 
 
-def sqrt_matrix(density_matrix: tc.Tensor) -> tc.Tensor:
+def sqrt_matrix(density_matrix: torch_tensor) -> torch_tensor:
     r"""Compute the square root matrix of a density matrix where :math:`\rho = \sqrt{\rho} \times \sqrt{\rho}`
 
     Args:
@@ -565,18 +559,18 @@ def sqrt_matrix(density_matrix: tc.Tensor) -> tc.Tensor:
     Returns:
         (tensor_like): Square root of the density matrix.
     """
-    evs, vecs = tc.linalg.eigh(density_matrix)
-    evs = tc.where(evs > 0.0, evs, 0.0)
-    evs = tc.real(evs).to(tc.complex64)
-    return vecs @ tc.diag(tc.sqrt(evs)) @ vecs.T.conj()
+    evs, vecs = torch_eigh(density_matrix)
+    evs = where(evs > 0.0, evs, 0.0)
+    evs = real(evs).to(complex64)
+    return vecs @ diag(sqrt(evs)) @ vecs.T.conj()
 
 
-def cal_fidelity(rho: tc.Tensor, sigma: tc.Tensor) -> tc.Tensor:
-    """
+def cal_fidelity(rho: torch_tensor, sigma: torch_tensor) -> torch_tensor:
+    r"""
     Calculate the fidelity between two density matrices.
 
     Equation:
-        F(rho, sigma) = Tr(\sqrt{\sqrt{rho} sigma \sqrt{rho}})
+        F(rho, sigma) = \tr(\sqrt{\sqrt{rho} sigma \sqrt{rho}})
 
     Args:
         rho: density matrix;
@@ -590,20 +584,17 @@ def cal_fidelity(rho: tc.Tensor, sigma: tc.Tensor) -> tc.Tensor:
     _sqrt_rho = sqrt_matrix(rho)
     _sqrt_rho_sigma_sqrt_rho = _sqrt_rho @ sigma @ _sqrt_rho
 
-    evs = tc.linalg.eigvalsh(_sqrt_rho_sigma_sqrt_rho)
-    evs = tc.real(evs)
-    evs = tc.where(evs > 0.0, evs, 0.0)
+    evs = eigvalsh(_sqrt_rho_sigma_sqrt_rho)
+    evs = real(evs)
+    evs = where(evs > 0.0, evs, 0.0)
 
-    trace = tc.sum(tc.sqrt(evs), -1)
+    _trace = sum(sqrt(evs), -1)
 
-    return trace
+    return _trace
 
 
-def validDensityMatrix(rho,
-                       methodIdx: int = 1,
-                       constraints: str = 'eq',
-                       hermitian: bool = True,
-                       device: Union[str, int] = 'cpu'):
+def validDensityMatrix(rho, methodIdx: int = 1, constraints: str = 'eq',
+                       hermitian: bool = True, device: Union[str, int] = 'cpu'):
     """
     Produced by Dr.Shi  --- Data Science
 
@@ -624,7 +615,7 @@ def validDensityMatrix(rho,
     rho = rho.to(device='cpu')
     ps, psi = np.linalg.eigh(rho)
 
-    traceV = 1.0  # tc.trace(rho)
+    traceV = 1.0  # trace(rho)
     fitFunc = lambda p: np.sum(np.abs(p - ps) ** 2)
     bounds = [(0.0, traceV + 0.001) for _ in range(len(ps))]
 
@@ -644,26 +635,7 @@ def validDensityMatrix(rho,
     res = minimize(fitFunc, x0, method=optMethods[methodIdx], constraints=cons, bounds=bounds)
     newPs = res.x
 
-    psi, newPs = tc.tensor(psi), tc.tensor(newPs, dtype=tc.complex64)
+    psi, newPs = torch_tensor(psi), torch_tensor(newPs, dtype=complex64)
 
     rho_semi = psi @ np.diag(newPs) @ psi.T.conj()
     return rho_semi.to(device=device)
-
-
-def iSing_hamiltonian_near(qnumber: int) -> tc.Tensor:
-    # Predefined matrices
-    qeye = tc.tensor([[1, 0], [0, 1]], dtype=tc.complex64)
-    sigma_z = tc.tensor([[1, 0], [0, -1]], dtype=tc.complex64)
-
-    def tensor_sigmaz(N: int, order: int):
-        _list = [sigma_z if _i == order else qeye for _i in range(N)]
-        return reduce(tc.kron, _list)
-
-    # Initialize Hamiltonian
-    Ham = tc.zeros(size=(2 ** qnumber, 2 ** qnumber), dtype=tc.complex64)
-
-    # Construct Hamiltonian
-    for i in range(qnumber - 1):
-        Ham -= tc.matmul(tensor_sigmaz(qnumber, i), tensor_sigmaz(qnumber, i + 1))
-
-    return Ham

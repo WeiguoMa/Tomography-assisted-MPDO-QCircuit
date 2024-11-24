@@ -3,11 +3,8 @@ Author: weiguo_ma
 Time: 04.27.2023
 Contact: weiguo.m@iphy.ac.cn
 """
-
-
-class Chip_information:
+class ChipInformation:
     def __init__(self, query_time: str = None):
-        """Initialize a ChipInformation object."""
         self.queryTime = query_time
         self.status = None
 
@@ -26,7 +23,6 @@ class Chip_information:
             raise AttributeError(f'Chip: {item} is not supported.')
 
     def beta4Test(self):
-        """Set chip information for the beta4Test scenario."""
         self.chipName = 'beta4Test'
         if self.queryTime is None:
             self.gateTime = 30

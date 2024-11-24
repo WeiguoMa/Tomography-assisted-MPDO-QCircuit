@@ -10,8 +10,8 @@ import numpy as np
 import tensornetwork as tn
 import torch as tc
 
-from Library.chipInfo import Chip_information
-from Library.tools import select_device
+from .ChipInfo import ChipInformation
+from .Tools import select_device
 
 tn.set_default_backend("pytorch")
 
@@ -22,7 +22,7 @@ class NoiseChannel:
         self.device = select_device(device)
 
         # chip Info
-        self.chip = (Chip_information().__getattribute__(chip or 'worst4Test'))()
+        self.chip = (ChipInformation().__getattribute__(chip or 'worst4Test'))()
         self.T1 = self.chip.T1
         self.T2 = self.chip.T2
         self.GateTime = self.chip.gateTime
@@ -39,7 +39,7 @@ class NoiseChannel:
         self.apdeCTensor = self.amp_phase_damping_error(time=self.GateTime, T1=self.T1, T2=self.T2)
 
     def depolarization_noise_channel(self, p: float, qn: int = 1) -> tc.Tensor:
-        """
+        r"""
         Constructs the depolarization noise channel tensor.
 
         Parameters:

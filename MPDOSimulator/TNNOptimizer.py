@@ -3,19 +3,20 @@ Author: weiguo_ma
 Time: 04.13.2023
 Contact: weiguo.m@iphy.ac.cn
 """
-
-from typing import List, Union, Optional
+from typing import List, Union, Optional, cast
 
 import tensornetwork as tn
 import torch as tc
 
-from Library.tools import EdgeName2AxisName
+from .Tools import EdgeName2AxisName
 
 __all__ = [
     'qr_left2right',
     'svd_left2right',
     'svd_right2left',
-    'svdKappa_left2right'
+    'svdKappa_left2right',
+    'bondTruncate',
+    'checkConnectivity'
 ]
 
 
@@ -57,25 +58,30 @@ def checkConnectivity(_qubits: Union[List[tn.Node], List[tn.AbstractNode]]):
     Returns:
         True if qubits are connected, False otherwise.
     """
-    connectivity = None
     if len(_qubits) <= 1:
         return True
-    elif len(_qubits) == 2:
-        return _qubits[0].has_nondangling_edge()
-    else:
-        try:
-            for _n in range(1, len(_qubits) - 1, 1):
-                _, _ = _qubits[_n][f'bond_{_n - 1}_{_n}'], _qubits[_n][f'bond_{_n}_{_n + 1}']
-                connectivity = True
-        except ValueError:
-            connectivity = False
-        return connectivity
+    try:
+        tn.check_connected(_qubits)
+        return True
+    except ValueError:
+        return False
 
 
-def von_neumann_entropy(eigenvalues):
-    eigenvalues = tc.abs(eigenvalues)
-    entropy = -tc.sum(eigenvalues * tc.log2(eigenvalues))
-    return entropy
+def bondTruncate(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: int, regularization: bool = False):
+    """
+    Call of qr -> svd.
+
+    Args:
+        _qubits: List of qubits (as nodes).
+        chi: bond dimension.
+        regularization: True for regularization.
+
+    Returns:
+        None: The function modifies the input tensors in-place.
+    """
+    if chi is not None or regularization:
+        qr_left2right(_qubits)
+        svd_left2right(_qubits, chi=chi)
 
 
 def qr_left2right(_qubits: Union[List[tn.Node], List[tn.AbstractNode]]):
@@ -86,13 +92,12 @@ def qr_left2right(_qubits: Union[List[tn.Node], List[tn.AbstractNode]]):
         _qubits: List of qubits (as nodes).
 
     Returns:
-        Nodes after QR decomposition, on progress.
+        None: The function modifies the input tensors in-place.
     """
     if not isinstance(_qubits, List):
         raise TypeError('input should be a list of qubits nodes')
 
     for _i in range(len(_qubits) - 1):
-
         _edges = _qubits[_i].edges
         _left_edges, _right_edges = (
             [_edge for _edge in _edges if f'bond_{_i}_' not in _edge.name],
@@ -102,19 +107,17 @@ def qr_left2right(_qubits: Union[List[tn.Node], List[tn.AbstractNode]]):
         _q, _r = tn.split_node_qr(_qubits[_i],
                                   left_edges=_left_edges,
                                   right_edges=_right_edges,
-                                  left_name=f'qubit_{_i}',
+                                  left_name=_qubits[_i].name,
                                   right_name='right_waiting4contract2form_right',
                                   edge_name=f'qrbond_{_i}_{_i + 1}')
 
-        _r = tn.contract_between(_r, _qubits[_i + 1])
-        _r.name = 'qubit_{}'.format(_i + 1)
-
+        _r = tn.contract_between(_r, _qubits[_i + 1], name=_qubits[_i + 1].name)
         _qubits[_i], _qubits[_i + 1] = _q, _r
-        # ProcessFunction, for details, see the function definition.
+
         EdgeName2AxisName([_qubits[_i], _qubits[_i + 1]])
 
 
-def svd_right2left(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: Optional[int] = None):
+def svd_right2left(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: int):
     r"""
     SVD from right to left.
 
@@ -123,26 +126,21 @@ def svd_right2left(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: Op
         chi: bond dimension.
 
     Returns:
-        _qubits: list of nodes.
+        None: The function modifies the input tensors in-place.
     """
     if not isinstance(_qubits, List):
         raise TypeError('input should be a list of qubits nodes')
 
     for idx in range(len(_qubits) - 1, 0, -1):
-        # SVD name cluster
         _left_edges = [name for name in _qubits[idx - 1].axis_names if name not in _qubits[idx].axis_names]
         _right_edges = [name for name in _qubits[idx].axis_names if name not in _qubits[idx - 1].axis_names]
 
         _left_edges = [_qubits[idx - 1][_left_name] for _left_name in _left_edges]
         _right_edges = [_qubits[idx][_right_name] for _right_name in _right_edges]
 
-        # Contract
-        contracted_two_nodes = tn.contract_between(_qubits[idx - 1],
-                                                   _qubits[idx],
-                                                   name='contract_two_nodes')
-        # ProcessFunction, for details, see the function definition.
+        contracted_two_nodes = tn.contract_between(_qubits[idx - 1], _qubits[idx], name='contract_two_nodes')
         EdgeName2AxisName([contracted_two_nodes])
-        # SVD
+
         _qubits[idx - 1], _qubits[idx], _ = tn.split_node(contracted_two_nodes,
                                                           left_edges=_left_edges,
                                                           right_edges=_right_edges,
@@ -153,7 +151,7 @@ def svd_right2left(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: Op
         EdgeName2AxisName([_qubits[idx - 1], _qubits[idx]])
 
 
-def svd_left2right(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: Optional[int] = None):
+def svd_left2right(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: int):
     """
         SVD from left to right.
 
@@ -162,96 +160,68 @@ def svd_left2right(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: Op
             chi: bond dimension.
 
         Returns:
-            _qubits: list of nodes.
+            None: The function modifies the input tensors in-place.
         """
     if not isinstance(_qubits, List):
         raise TypeError('input should be a list of qubits nodes')
 
     for idx in range(len(_qubits) - 1):
-        # SVD name cluster
         _left_edges = [name for name in _qubits[idx].axis_names if name not in _qubits[idx + 1].axis_names]
         _right_edges = [name for name in _qubits[idx + 1].axis_names if name not in _qubits[idx].axis_names]
 
         _left_edges = [_qubits[idx][_left_name] for _left_name in _left_edges]
         _right_edges = [_qubits[idx + 1][_right_name] for _right_name in _right_edges]
 
-        # Contract
-        contracted_two_nodes = tn.contract_between(_qubits[idx],
-                                                   _qubits[idx + 1],
-                                                   name='contract_two_nodes')
-        # ProcessFunction, for details, see the function definition.
+        contracted_two_nodes = tn.contract_between(_qubits[idx], _qubits[idx + 1], name='contract_two_nodes')
         EdgeName2AxisName([contracted_two_nodes])
-        # SVD
+
         _qubits[idx], _qubits[idx + 1], _ = tn.split_node(contracted_two_nodes,
                                                           left_edges=_left_edges,
                                                           right_edges=_right_edges,
                                                           left_name=_qubits[idx].name,
                                                           right_name=_qubits[idx + 1].name,
-                                                          edge_name=f'nbond_{idx}_{idx + 1}',
+                                                          edge_name=f'bond_{idx}_{idx + 1}',
                                                           max_singular_values=chi)
         EdgeName2AxisName([_qubits[idx], _qubits[idx + 1]])
 
 
-def svdKappa_left2right(qubits: Union[List[tn.Node], List[tn.AbstractNode]], kappa: Optional[int] = None):
-    r"""
+def svdKappa_left2right(_qubits: List[tn.AbstractNode], kappa: int):
+    """
     Perform SVD with optional dimension truncation on a list of quantum tensors.
 
     Args:
-        qubits (list[tn.Node] or list[tn.AbstractNode]): List of quantum tensors.
+        _qubits (list[tn.Node] or list[tn.AbstractNode]): List of quantum tensors.
         kappa (int, optional): The truncation dimension. If None, no truncation is performed.
 
     Returns:
         None: The function modifies the input tensors in-place.
     """
-    for _num, _qubit in enumerate(qubits):
-        # Shape-relating
-        _qubitTensor, _qubitAxisNames = _qubit.tensor, _qubit.axis_names
+    if kappa is None:
+        return None
 
-        _lIdx, _rIdx = range(_num), range(_num + 1, len(qubits))
-        _lBond, _rBond = [''] * len(_lIdx), [''] * len(_rIdx)
-        _lList, _rList = 'labcdefgh', 'rstuvwxyz'
+    for _idx, _qubit in enumerate(_qubits):
+        if not f'I_{_idx}' in _qubit.axis_names:
+            continue
+        if cast(int, _qubit[f'I_{_idx}'].dimension) <= kappa:
+            continue
 
-        for _idx in _lIdx:
-            if f'bond_{_idx}_{_num}' in _qubitAxisNames:
-                _lBond[_idx] = _lList[_idx]
-        for _idx in _rIdx:
-            if f'bond_{_num}_{_idx}' in _qubitAxisNames:
-                _rBond[_idx-_num-1] = _rList[_idx-_num-1]
+        _noiseEdge = [_qubit[f'I_{_idx}']]
+        _otherEdges = [edge for edge in _qubit.edges if edge != _noiseEdge[0]]
 
-        _qubitIdx = ''.join(_lBond + ['i', 'j' * (f'I_{_num}' in _qubitAxisNames)] + _rBond)
+        _U, _S, _, _ = tn.split_node_full_svd(
+            _qubit, left_edges=_otherEdges, right_edges=_noiseEdge, max_singular_values=kappa,
+            left_name=f'qubit_{_idx}', right_edge_name=f'kpI_{_idx}'
+        )
+        _U = tn.contract_between(_U, _S, name=_qubit.name)
+        EdgeName2AxisName([_U])
 
-        _jIdx = _qubitIdx.find('j')
-        if _jIdx != -1:
-            _qubitIdxAOP = f'{_qubitIdx.replace("j", "")}j'
-            _qubitTensor = tc.einsum(f'{_qubitIdx} -> {_qubitIdxAOP}', _qubitTensor)
-            _shape = _qubitTensor.shape
-
-            # SVD to truncate the inner dimension
-            if _qubitTensor.numel() < 10000 or kappa is None:
-                _u, _s, _ = tc.linalg.svd(tc.reshape(_qubitTensor, (-1, _shape[-1])), full_matrices=False)
-            else:
-                _u, _s, _ = _randomized_svd(tc.reshape(_qubitTensor, (-1, _shape[-1])), n_components=kappa)
-
-            _s = _s.to(dtype=tc.complex64)
-
-            # Truncate the inner dimension
-            if kappa is None or kappa > _s.nelement():
-                kappa = _s.nelement()
-
-            _u, _s = _u[:, : kappa], _s[: kappa]
-
-            if len(_s.shape) == 1:
-                _s = tc.diag(_s)
-
-            # Back to the former shape
-            _qubitTensor = tc.einsum(f'{_qubitIdxAOP} -> {_qubitIdx}',
-                                     tc.reshape(tc.matmul(_u, _s), _shape[:-1] + (kappa,)))
-            _qubit.set_tensor(_qubitTensor)
+        _U[f'I_{_idx}'].disconnect()
+        _qubits[_idx] = _U
 
 
 def cal_entropy(qubits: Union[List[tn.Node], List[tn.AbstractNode]]):
-    r"""
-    Perform SVD with optional dimension truncation on a list of quantum tensors.
+    """
+    Calculate entropy of a list of quantum tensors.
 
     Args:
         qubits (list[tn.Node] or list[tn.AbstractNode]): List of quantum tensors.
@@ -260,29 +230,4 @@ def cal_entropy(qubits: Union[List[tn.Node], List[tn.AbstractNode]]):
     Returns:
         _entropy: The function modifies the input tensors in-place.
     """
-    _entropy = {f'qEntropy_{_i}': None for _i in range(len(qubits))}
-    _entropy.update({f'dimension_{_i}': None for _i in range(len(qubits))})
-    for _num, _qubit in enumerate(qubits):
-        # Shape-relating
-        _qubitTensor, _qubitAxisNames = _qubit.tensor, _qubit.axis_names
-        _qubitIdx = ''.join([
-            'l' * (f'bond_{_num - 1}_{_num}' in _qubitAxisNames),
-            'i',
-            'j' * (f'I_{_num}' in _qubitAxisNames),
-            'r' * (f'bond_{_num}_{_num + 1}' in _qubitAxisNames)
-        ])
-
-        _jIdx = _qubitIdx.find('j')
-        if _jIdx != -1:
-            _qubitIdxAOP = f'{_qubitIdx.replace("j", "")}j'
-            _qubitTensor = tc.einsum(f'{_qubitIdx} -> {_qubitIdxAOP}', _qubitTensor)
-            _shape = _qubitTensor.shape
-            # SVD to truncate the inner dimension
-            _u, _s, _ = tc.linalg.svd(tc.reshape(_qubitTensor, (-1, _shape[-1])), full_matrices=False)
-            _s = _s.to(dtype=tc.complex64)
-
-            print(_s)
-            _entropy[f'dimension_{_num}'] = _s.shape[0]
-            _entropy[f'qEntropy_{_num}'] = von_neumann_entropy(_s)
-
-    return _entropy
+    raise NotImplementedError

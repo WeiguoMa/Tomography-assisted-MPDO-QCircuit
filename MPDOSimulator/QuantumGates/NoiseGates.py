@@ -1,30 +1,26 @@
 """
 Author: weiguo_ma
-Time: 11.27.2023
+Time: 11.24.2024
 Contact: weiguo.m@iphy.ac.cn
 """
 import warnings
 from typing import Union, Optional
 
-import torch as tc
+from torch import Tensor, complex64
 
-from Library.QuantumGates.AbstractGate import QuantumGate
-from Library.realNoise import czExp_channel, cpExp_channel
+from .AbstractGate import QuantumGate
+from ..RealNoise import czExp_channel, cpExp_channel
 
 
 class CZEXPGate(QuantumGate):
     """
-        CZ_EXP gate.
+    CZ_EXP gate.
     """
 
-    def __init__(self, tensor: Optional[tc.Tensor] = None,
-                 dtype=tc.complex64, device: Union[str, int] = 'cpu'):
-        super(CZEXPGate, self).__init__()
-        self.device = device
-        self.dtype = dtype
-
+    def __init__(self, tensor: Optional[Tensor] = None, dtype=complex64, device: Union[str, int] = 'cpu'):
+        super(CZEXPGate, self).__init__(dtype=dtype, device=device)
         self.ideal = False
-        self.Tensor = tensor
+        self._matrix = tensor
 
     @property
     def name(self):
@@ -33,11 +29,11 @@ class CZEXPGate(QuantumGate):
     @property
     def tensor(self):
         # NO input may cause high memory cost and time cost
-        if self.Tensor is None:
+        if self._matrix is None:
             warnings.warn('No (sufficient) CZ input files, use default tensor.')
-            return czExp_channel(filename='data/chi/czDefault.mat').to(self.device, dtype=self.dtype)
+            return czExp_channel(filename='MPDOSimulator/chi/czDefault.mat').to(dtype=self.dtype, device=self.device)
         else:
-            return self.Tensor.to(self.device, dtype=self.dtype)
+            return self._matrix.to(dtype=self.dtype, device=self.device)
 
     @property
     def rank(self):
@@ -58,17 +54,13 @@ class CZEXPGate(QuantumGate):
 
 class CPEXPGate(QuantumGate):
     """
-        CP_EXP gate.
+    CP_EXP gate.
     """
 
-    def __init__(self, tensor: Optional[tc.Tensor] = None,
-                 dtype=tc.complex64, device: Union[str, int] = 'cpu'):
-        super(CPEXPGate, self).__init__()
-        self.device = device
-        self.dtype = dtype
-
+    def __init__(self, tensor: Optional[Tensor] = None, dtype=complex64, device: Union[str, int] = 'cpu'):
+        super(CPEXPGate, self).__init__(dtype=dtype, device=device)
         self.ideal = False
-        self.Tensor = tensor
+        self._matrix = tensor
 
     @property
     def name(self):
@@ -77,11 +69,11 @@ class CPEXPGate(QuantumGate):
     @property
     def tensor(self):
         # NO input may cause high memory cost and time cost
-        if self.Tensor is None:
+        if self._matrix is None:
             warnings.warn('No (sufficient) CP input files, use default tensor.')
-            return cpExp_channel().to(self.device, dtype=self.dtype)
+            return cpExp_channel().to(dtype=self.dtype, device=self.device)
         else:
-            return self.Tensor.to(self.device, dtype=self.dtype)
+            return self._matrix.to(dtype=self.dtype, device=self.device)
 
     @property
     def rank(self):
