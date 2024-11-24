@@ -1,4 +1,4 @@
-# Noisy Quantum circuit simulator with Matrix Product Density Operator (MPDO)
+# Tomography-assisted noisy quantum circuit simulator using matrix product density operators
 
 ###### I have to emphasize that this project is not intended for High Performance Computing now.
 
@@ -324,7 +324,7 @@ print(prob_dict)
 Simulator.Tools.plot_histogram(prob_dict, title=f'"{noiseType}" Probability Distribution', filename='./figs/test.pdf', show=False)
 ```
 
-# Install as a package
+## Install as a package
 You can build this program from the source:
 ```
 pip install -r requirements.txt
