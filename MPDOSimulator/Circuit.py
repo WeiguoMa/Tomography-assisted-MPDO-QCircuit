@@ -77,7 +77,7 @@ class TensorCircuit(QuantumCircuit):
     def _assignEdges(contracted_node: tn.AbstractNode, minIdx: int):
         _lEdges, _rEdges = [], []
         for _axis in contracted_node.axis_names:
-            if f'{minIdx}' in _axis:
+            if f'_{minIdx}' in _axis:
                 _lEdges.append(contracted_node[_axis])
             else:
                 _rEdges.append(contracted_node[_axis])
@@ -278,37 +278,37 @@ class TensorCircuit(QuantumCircuit):
             return self.DM
 
     def forward(self,
-                _state: List[tn.AbstractNode],
+                state: List[tn.AbstractNode],
+                require_nodes: bool = False,
                 state_vector: bool = False,
                 reduced_index: Optional[List] = None,
-                forceVectorRequire: bool = False,
-                _require_nodes: bool = False) -> Union[tc.Tensor, Dict, Tuple]:
+                forceVectorRequire: bool = False) -> Union[tc.Tensor, Dict, Tuple]:
         """
         Forward propagation of tensornetwork.
 
         Returns:
             self.state: tensornetwork after forward propagation.
         """
-        self.state = _state
-        self.qnumber, self.fVR = len(_state), forceVectorRequire
+        self.state = state
+        self.qnumber, self.fVR = len(state), forceVectorRequire
 
         for _i, layer in enumerate(self.layers):
-            self._add_gate(_state, _i, _oqs=self._oqs_list[_i])
+            self._add_gate(state, _i, _oqs=self._oqs_list[_i])
             self.Truncate = True if layer is None else False
             #
             if self.Truncate and self.tnn_optimize:
-                if checkConnectivity(_state) and self.chi is not None:
-                    bondTruncate(_state, self.chi)
+                if checkConnectivity(state) and self.chi is not None:
+                    bondTruncate(state, self.chi)
                 if not self.ideal and self.kappa is not None:
-                    svdKappa_left2right(_state, kappa=self.kappa)
+                    svdKappa_left2right(state, kappa=self.kappa)
 
             self.Truncate = False
 
         # LastLayer noise-truncation
         if self.tnn_optimize and not self.ideal and self.kappa is not None:
-            svdKappa_left2right(_state, kappa=self.kappa)
+            svdKappa_left2right(state, kappa=self.kappa)
 
-        _nodes = deepcopy(self.state) if _require_nodes else None
+        _nodes = deepcopy(self.state) if require_nodes else None
         _dm = self._calculate_DM(state_vector=state_vector, reduced_index=reduced_index)
 
-        return (_nodes, _dm) if _require_nodes else _dm
+        return (_nodes, _dm) if require_nodes else _dm
