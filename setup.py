@@ -29,22 +29,22 @@ setup(
     name="MPDOSimulator",
     version="1.0.0",
     description="Tomography-assisted quantum circuit simulator with Matrix Product Density Operators",
-    long_description=open("README.md").read(),  # 详细描述，从 README 加载
-    long_description_content_type="text/markdown",  # README 的格式
+    long_description=open("README.md").read(),
+    long_description_content_type="text/markdown",
     author="Weiguo Ma",
     author_email="Weiguo.m@iphy.ac.cn",
     url="https://github.com/WeiguoMa/Tomography-assisted-MPDO-QCircuit",
-    packages=find_packages(),  # 自动发现模块
+    packages=find_packages(),
     package_data={
         "MPDOSimulator": ["Chi/*.mat"]
     },
     install_requires=[
-        "numpy",  # 依赖项（可选）
+        "numpy",
     ],
-    classifiers=[  # 分类器，定义包的属性
+    classifiers=[
         "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
+        "License :: BSD 3-Clause License",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.10",  # 支持的 Python 版本
+    python_requires=">=3.10",
 )
