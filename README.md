@@ -1,8 +1,7 @@
 # Noisy Quantum circuit simulator with Matrix Product Density Operator (MPDO)
 
 ###### I have to emphasize that this project is not intended for High Performance Computing now.
-###### The python version, especially based on Pytorch, could be orders of magnitude slower than the C++ implementation.
-###### The C++ version, with ITensor package, is not uploaded yet.
+
 This work contains the code of paper "Tomography-assisted noisy quantum circuit simulator using matrix 
 product density operators". This work simply combines the Quantum Process Tomography with Matrix Product 
 Density Operators to simulate the quantum circuit with experimental "real noise". The manuscript can be 
@@ -11,8 +10,8 @@ found here: [https://journals.aps.org/pra/abstract/10.1103/PhysRevA.110.032604](
 
 Main Packages Required:
 
+- Pytorch >= 2.0
 - TensorNetwork -- Latest Version
-- Pytorch -- Version 2.0 or Version 1.10
 
 ### TensorNetwork Package
 ###### Because of the design from old version PyTorch, You need to substitute the decompositions.py file in TensorNetwork.backend.torch to reach the correct SVD and QR decomposition.
@@ -30,54 +29,6 @@ Within the context of this project, the PyTorch backend was adopted and configur
 ```
 tensornetwork.set_default_backend("pytorch")
 ```
-
-Potential issues may arise when utilizing this package, necessitating self-implemented code fixes. The primary
-reason for selecting this particular package is its simplicity and ease of comprehension, especially
-considering that it was the first package I encountered through NEW Bing. Due to my limited coding
-proficiency, I opted not to explore alternative packages at this time. The problems encountered include, but
-are not limited to:
-
-1. Axis_names and edge_names are not consistent, which may cause bugs like in
-   SVD (Interestingly
-   , edges name won't change after operation like CONTRACT, so I wrote function
-   tools.EdgeName2AxisName
-   to keep axis_names is right);
-2. Some of the backends' settings are out of date, like torch.svd and torch.qr are substituted by
-   torch.linalg.svd and torch.linalg.qr, and may causes bug while .linalg.svd
-   return vh, which
-   is the transpose and conjugate of v, but .svd return v directly;
-3. ...
-
-Certainly, there are packages under maintenance,
-
-- [TeNpy](https://github.com/tenpy/tenpy): A package developed by physicist, it
-  provides
-  many useful algorithm like DMRG/TEBD, but it is not easy to use(for me);
-- [ITensor](https://itensor.org/): If you're familiar with C++ or Julia, ITensor
-  is a good
-  choice to accomplish the target.
-- You might just create a package with different backend, use backend.einsum()
-  to make
-  calculation.
-
-<span style="color:red">
-For all, author(me) is not familiar with both C++ and TensorNetwork coding, so I choose
-the simplest one as a startup. Once the MPS-MPO-MPDO simulator is necessary for me and my
-team, I might consider coding it with CPP with a faster contracting and controlling. Let it
-be known that ** ITensor does not support its CPP package **.
-</span> 
-
-
-**Attention:**
-
-1. While you are trying to use spilt_node(svd or qr), be careful about the
-   axis_names, which is involved in the calculation of the SVD/QR with left_edges and right_edges,
-   I wrote some strategy to ensure it is right, but might be ugly, and some of them are abolished.
-2. I set **Nodes** as qubits, which can be easily operated and more intuitive to understand. However, in
-   some theory, people believe that **Edges** are qubits, which is more suitable.
-3. Python Class tensornetwork.Node or tensornetwork.AbstractNode is physical entity in computer memory, so
-   that operations to qubits can be done without given a new memory space, which saves memory and easy to
-   code in implementation.
 
 ### Qubit
 
@@ -167,11 +118,6 @@ Except the rightest tensor, all other tensors got left-orthogonalized.
     \sum_ {l_ {k+1}} T_ {l_k, l_ {k+1}}^{s_k, a_k} T_ {l_ {k+1}, r_ {k+1}}^{s_ {k+1}, a_ {k+1}}\approx 
     \sum_ {\mu=1}^{\chi} U^{s_k, a_k}_ {l_k, \mu} S_\mu V_ {\mu, r_ {k+1}}^{s_ {k+1}, a_ {k+1}}
 ```
-
-<span style="color:blue">
-The most economical way is first to complete a layer of two-qubit gates and noise, then
-to perform step 2&3.
-</span>
 
 ## Mathematical Implementation
 
@@ -286,9 +232,7 @@ reusability of components, which can lead to a more maintainable and scalable pr
 
 ```python
 import tensornetwork as tn
-
-import Library.tools as tools
-from Library.QuantumCircuit import TensorCircuit
+import MPDOSimulator as Simulator
 
 tn.set_default_backend("pytorch")
 ```
@@ -297,13 +241,13 @@ tn.set_default_backend("pytorch")
 
 ```python
 # Basic information of circuit
-qnumber = 5
+qnumber = 4
 ideal_circuit = False  # or True
 noiseType = 'realNoise'  # or 'realNoise' or 'idealNoise'
 
 chiFileNames = {
-    'CZ': {'01': './data/chi/czDefault.mat', '12': './data/chi/czDefault.mat', '23': './data/chi/czDefault.mat',
-           '34': './data/chi/czDefault.mat'},
+    'CZ': {'01': './MPDOSimulator/chi/czDefault.mat', '12': './MPDOSimulator/chi/czDefault.mat', '23': './MPDOSimulator/chi/czDefault.mat',
+           '34': './MPDOSimulator/chi/czDefault.mat'},
     'CP': {}
 }
 chi, kappa = 4, 4
@@ -330,20 +274,18 @@ An ideal=True circuit cannot work with realNoise=True,
 
 ```python
 # Establish a quantum circuit
-circuit = TensorCircuit(qn=qnumber, ideal=ideal_circuit, noiseType=noiseType,
-                        chiFileDict=chiFileNames, chi=chi, kappa=kappa, chip='worst4Test', device='cpu')
+circuit = Simulator.TensorCircuit(qn=qnumber, ideal=ideal_circuit, noiseType=noiseType,
+                        chiFileDict=chiFileNames, chi=chi, kappa=kappa, chip='beta4Test', device='cpu')
 
 circuit.h(0)
 circuit.cnot(0, 1)
 circuit.cnot(1, 2)
 circuit.cnot(2, 3)
-circuit.cnot(3, 4)
 
 # Set TensorNetwork Truncation
 circuit.truncate()
 
 print(circuit)
-
 ```
 
 ## An Initial Quantum State
@@ -359,7 +301,8 @@ Certainly, people can input an arbitrary state with
         list[tensornetwork.Node] or list[tensornetwork.AbstractNode]
 """
 
-initState = tools.create_ket0Series(qnumber)
+# Generate an initial quantum state
+state = Simulator.Tools.create_ket0Series(qnumber)
 ```
 
 ## Calculate Ket-space and Density Matrix $\rho$
@@ -373,14 +316,17 @@ State returns a state vector for pure quantum state, or a density matrix.
      	reduced_index: list, calculate the reduced density matrix with the given index qubit is reduced.
 """
 
-state = circuit(state, state_vector=False, reduced_index=[])
+# Calculate probability distribution
+prob_dict = Simulator.Tools.density2prob(state, tol=5e-4)  # Set _dict=False to return a np.array
+print(prob_dict)
+
+# plot probability distribution
+Simulator.Tools.plot_histogram(prob_dict, title=f'"{noiseType}" Probability Distribution', filename='./figs/test.pdf', show=False)
 ```
 
-# Problems may be encountered
-
-**VQA** is not supported in this version, bugs still exist in the implementation
-of forward()
-and updating the parameters.
-
-**Memory Overflow** is possible to happen while unknown error occurs in the
-program.
+# Install as a package
+You can build this program from the source:
+```
+pip install -r requirements.txt
+python setup.py install
+```
