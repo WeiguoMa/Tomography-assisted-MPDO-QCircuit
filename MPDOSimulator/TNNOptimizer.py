@@ -81,7 +81,7 @@ def bondTruncate(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: int,
     """
     if chi is not None or regularization:
         qr_left2right(_qubits)
-        svd_left2right(_qubits, chi=chi)
+        svd_right2left(_qubits, chi=chi)
 
 
 def qr_left2right(_qubits: Union[List[tn.Node], List[tn.AbstractNode]]):
@@ -100,8 +100,8 @@ def qr_left2right(_qubits: Union[List[tn.Node], List[tn.AbstractNode]]):
     for _i in range(len(_qubits) - 1):
         _edges = _qubits[_i].edges
         _left_edges, _right_edges = (
-            [_edge for _edge in _edges if f'bond_{_i}_' not in _edge.name],
-            [_edge for _edge in _edges if f'bond_{_i}_' in _edge.name]
+            [_edge for _edge in _edges if _edge.name != f'bond_{_i}_{_i + 1}'],
+            [_qubits[_i][f'bond_{_i}_{_i + 1}']]
         )
 
         _q, _r = tn.split_node_qr(_qubits[_i],
