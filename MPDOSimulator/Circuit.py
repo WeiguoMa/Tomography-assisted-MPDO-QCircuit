@@ -66,7 +66,6 @@ class TensorCircuit(QuantumCircuit):
 
         # Density Matrix
         self.DM = None
-        self.DMNode = None
 
         # TNN Truncation
         self.chi = chi
@@ -201,7 +200,8 @@ class TensorCircuit(QuantumCircuit):
                     EdgeName2AxisName([_qNodes[_bit]])
 
     def _calculate_DM(self, state_vector: bool = False,
-                      reduced_index: Optional[List[Union[List[int], int]]] = None) -> tc.Tensor:
+                      reduced_index: Optional[List[Union[List[int], int]]] = None,
+                      _dmNodes_before_contraction: bool = False) -> tc.Tensor:
         """
         Calculate the density matrix of the state.
 
@@ -221,14 +221,16 @@ class TensorCircuit(QuantumCircuit):
             ValueError: if the state is chosen to be a vector but is noisy;
             ValueError: Reduced index should be empty as [] or None.
         """
-        if not reduced_index:
-            reduced_index = None
+        if reduced_index is None:
+            reduced_index = []
+
+        _state = tn.replicate_nodes(self.state) if _dmNodes_before_contraction else self.state
 
         if reduced_index and max(reduced_index) >= self.qnumber:
             raise ValueError('Reduced index should not be larger than the qubit number.')
 
         if not state_vector:
-            _qubits_conj = tn.replicate_nodes(self.state)
+            _qubits_conj = tn.replicate_nodes(_state)
             for _qubit in _qubits_conj:
                 _qubit.set_tensor(_qubit.tensor.conj())
 
@@ -240,9 +242,9 @@ class TensorCircuit(QuantumCircuit):
                         _edge.set_name(f'con_{_qubit_conj[_ii].name}')
                         _qubit_conj.axis_names[_ii] = f'con_{_qubit_conj.axis_names[_ii]}'
 
-            for i in range(len(self.state)):
-                if not self.ideal and f'I_{i}' in self.state[i].axis_names:
-                    tn.connect(self.state[i][f'I_{i}'], _qubits_conj[i][f'I_{i}'])
+            for i in range(self.qnumber):
+                if not self.ideal and f'I_{i}' in _state[i].axis_names:
+                    tn.connect(_state[i][f'I_{i}'], _qubits_conj[i][f'I_{i}'])
 
             # Reduced density matrix
             if reduced_index:
@@ -250,19 +252,20 @@ class TensorCircuit(QuantumCircuit):
                 if not isinstance(reduced_index, list):
                     raise TypeError('reduced_index should be int or list[int]')
                 for _idx in reduced_index:
-                    tn.connect(self.state[_idx][f'physics_{_idx}'], _qubits_conj[_idx][f'con_physics_{_idx}'])
-            else:
-                reduced_index = []
+                    tn.connect(_state[_idx][f'physics_{_idx}'], _qubits_conj[_idx][f'con_physics_{_idx}'])
+
+            if _dmNodes_before_contraction:
+                return _state + _qubits_conj
 
             _numList = [_i for _i in range(self.qnumber) if _i not in reduced_index]
             _output_edge_order = (
-                    [self.state[i][f'physics_{i}'] for i in _numList] +
+                    [_state[i][f'physics_{i}'] for i in _numList] +
                     [_qubits_conj[i][f'con_physics_{i}'] for i in _numList]
             )
-            _dm = tn.contractors.auto(self.state + _qubits_conj, output_edge_order=_output_edge_order)
+            _dm = tn.contractors.auto(_state + _qubits_conj, output_edge_order=_output_edge_order)
 
             _reshape_size = self.qnumber - len(reduced_index)
-            self.DM, self.DMNode = _dm.tensor.reshape((2 ** _reshape_size, 2 ** _reshape_size)), self.DMNode
+            self.DM = _dm.tensor.reshape((2 ** _reshape_size, 2 ** _reshape_size))
             return self.DM
 
         else:
@@ -271,8 +274,8 @@ class TensorCircuit(QuantumCircuit):
             if reduced_index is not None:
                 raise ValueError('State vector cannot efficiently represents the reduced density matrix.')
 
-            _outOrder = [self.state[i][f'physics_{i}'] for i in list(range(self.qnumber))]
-            _vector = tn.contractors.auto(self.state, output_edge_order=_outOrder)
+            _outOrder = [_state[i][f'physics_{i}'] for i in list(range(self.qnumber))]
+            _vector = tn.contractors.auto(_state, output_edge_order=_outOrder)
 
             self.DM = _vector.tensor.reshape((2 ** self.qnumber, 1)) if not self.fVR else _vector.tensor
             return self.DM
@@ -280,10 +283,12 @@ class TensorCircuit(QuantumCircuit):
     def forward(self,
                 state: List[tn.AbstractNode],
                 require_nodes: bool = False,
+                require_dm_nodes: bool = False,
                 density_matrix: bool = True,
                 state_vector: bool = False,
                 reduced_index: Optional[List] = None,
-                forceVectorRequire: bool = False) -> Union[tc.Tensor, Dict, Tuple]:
+                forceVectorRequire: bool = False
+                ) -> Union[List[tn.AbstractNode], tc.Tensor, Tuple[List[tn.AbstractNode], tc.Tensor]]:
         """
         Forward propagation of tensornetwork.
 
@@ -309,7 +314,15 @@ class TensorCircuit(QuantumCircuit):
         if self.tnn_optimize and not self.ideal and self.kappa is not None:
             svdKappa_left2right(state, kappa=self.kappa)
 
-        _nodes = tn.replicate_nodes(self.state) if require_nodes else None
-        _dm = self._calculate_DM(state_vector=state_vector, reduced_index=reduced_index) if density_matrix else None
-
-        return (_nodes, _dm) if require_nodes else _dm
+        if require_nodes and not density_matrix:
+            if require_dm_nodes:
+                return self.state, self._calculate_DM(
+                    state_vector=state_vector, reduced_index=reduced_index, _dmNodes_before_contraction=True
+                )
+            return self.state
+        elif density_matrix and not require_nodes:
+            return self._calculate_DM(state_vector=state_vector, reduced_index=reduced_index)
+        else:
+            _nodes = tn.replicate_nodes(self.state)
+            _dm = self._calculate_DM(state_vector=state_vector, reduced_index=reduced_index)
+            return _nodes, _dm
