@@ -3,7 +3,6 @@ Author: weiguo_ma
 Time: 11.23.2024
 Contact: weiguo.m@iphy.ac.cn
 """
-from copy import deepcopy
 from typing import Optional, Dict, Union, List, Any, Tuple
 
 import tensornetwork as tn
@@ -24,6 +23,7 @@ class TensorCircuit(QuantumCircuit):
                  chi: Optional[int] = None, kappa: Optional[int] = None,
                  tnn_optimize: bool = True,
                  chip: Optional[str] = None,
+                 dtype: Optional = tc.complex64,
                  device: Optional[Union[str, int]] = None):
         """
         Args:
@@ -38,7 +38,7 @@ class TensorCircuit(QuantumCircuit):
         """
         self.realNoise = True if (noiseType == 'realNoise' and not ideal) else False
         self.device = select_device(device)
-        self.dtype = tc.complex64
+        self.dtype = dtype
 
         super(TensorCircuit, self).__init__(
             self.realNoise, noiseFiles=chiFileDict, dtype=self.dtype, device=self.device
@@ -228,7 +228,7 @@ class TensorCircuit(QuantumCircuit):
             raise ValueError('Reduced index should not be larger than the qubit number.')
 
         if not state_vector:
-            _qubits_conj = deepcopy(self.state)  # Node.copy() func. cannot work correctly
+            _qubits_conj = tn.replicate_nodes(self.state)
             for _qubit in _qubits_conj:
                 _qubit.set_tensor(_qubit.tensor.conj())
 
@@ -280,6 +280,7 @@ class TensorCircuit(QuantumCircuit):
     def forward(self,
                 state: List[tn.AbstractNode],
                 require_nodes: bool = False,
+                density_matrix: bool = True,
                 state_vector: bool = False,
                 reduced_index: Optional[List] = None,
                 forceVectorRequire: bool = False) -> Union[tc.Tensor, Dict, Tuple]:
@@ -308,7 +309,7 @@ class TensorCircuit(QuantumCircuit):
         if self.tnn_optimize and not self.ideal and self.kappa is not None:
             svdKappa_left2right(state, kappa=self.kappa)
 
-        _nodes = deepcopy(self.state) if require_nodes else None
-        _dm = self._calculate_DM(state_vector=state_vector, reduced_index=reduced_index)
+        _nodes = tn.replicate_nodes(self.state) if require_nodes else None
+        _dm = self._calculate_DM(state_vector=state_vector, reduced_index=reduced_index) if density_matrix else None
 
         return (_nodes, _dm) if require_nodes else _dm
