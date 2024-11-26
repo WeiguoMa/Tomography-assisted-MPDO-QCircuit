@@ -5,6 +5,7 @@ Contact: weiguo.m@iphy.ac.cn
 """
 import itertools
 import warnings
+from collections import Counter
 from copy import deepcopy
 from functools import reduce
 from typing import Optional, List, Union, Dict, cast
@@ -32,7 +33,8 @@ __all__ = [
     'density2prob',
     'select_device',
     'tc_expect',
-    'EdgeName2AxisName'
+    'EdgeName2AxisName',
+    'count_item'
 ]
 
 
@@ -639,3 +641,11 @@ def validDensityMatrix(rho, methodIdx: int = 1, constraints: str = 'eq',
 
     rho_semi = psi @ np.diag(newPs) @ psi.T.conj()
     return rho_semi.to(device=device)
+
+
+def count_item(data: Union[List[List[int]], List[str]]):
+    return dict(
+        Counter(
+            [tuple(item) if isinstance(item, List) else item for item in data]
+        )
+    )

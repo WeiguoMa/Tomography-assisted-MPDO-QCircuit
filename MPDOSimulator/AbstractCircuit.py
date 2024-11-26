@@ -3,12 +3,14 @@ Author: weiguo_ma
 Time: 11.27.2023
 Contact: weiguo.m@iphy.ac.cn
 """
-from abc import ABC
+from abc import ABC, abstractmethod
 from typing import List, Union, Optional, Dict, Any
 
+from tensornetwork import AbstractNode
 from torch import Tensor, nn, pi, tensor, complex64
 
 from .RealNoise import czExp_channel, cpExp_channel
+from .Tools import select_device
 
 
 class QuantumCircuit(ABC, nn.Module):
@@ -19,13 +21,18 @@ class QuantumCircuit(ABC, nn.Module):
     def __init__(self,
                  realNoise: bool,
                  noiseFiles: Optional[Dict[str, Dict[str, Any]]] = None,
+                 chi: Optional[int] = None, kappa: Optional[int] = None,
+                 tnn_optimize: bool = True,
                  dtype=complex64,
                  device: Union[str, int] = 'cpu'):
         super(QuantumCircuit, self).__init__()
 
-        self.device = device
+        self.device = select_device(device)
         self.dtype = dtype
-        self.Truncate = False
+        self.Truncate = None
+        self.chi = chi
+        self.kappa = kappa
+        self.tnn_optimize = tnn_optimize
 
         self.layers = nn.Sequential()
         self._oqs_list = []
@@ -33,6 +40,12 @@ class QuantumCircuit(ABC, nn.Module):
         # Noise
         self.realNoise = realNoise
         self.noiseFiles = noiseFiles if realNoise else None
+
+        # Density Matrix
+        self._initState = None
+        self._vector = None
+        self._stateNodes, self._dm, self._dmNodes = None, None, None
+        self._samples, self._counts = None, None
 
         #
         if self.realNoise:
@@ -50,6 +63,46 @@ class QuantumCircuit(ABC, nn.Module):
             _cpDict = self.noiseFiles['CP']
             for _keys in _cpDict.keys():
                 self._cp_expTensors[_keys] = cpExp_channel(filename=_cpDict[_keys]).to(self.device, dtype=self.dtype)
+
+    @property
+    def dm(self):
+        return self._dm
+
+    @property
+    def samples(self):
+        return self._samples
+
+    @property
+    def counts(self):
+        return self._counts
+
+    @property
+    def initial_state(self):
+        return self._initState
+
+    @property
+    def stateNodes(self):
+        return self._stateNodes
+
+    @property
+    def dmNodes(self):
+        return self._dmNodes
+
+    @property
+    def vector(self):
+        return self._vector
+
+    @abstractmethod
+    def cal_vector(self):
+        pass
+
+    @abstractmethod
+    def cal_dm(self):
+        pass
+
+    @abstractmethod
+    def evolve(self, state: List[AbstractNode]):
+        pass
 
     def _add_module(self, _gate: nn.Module, oqs: List, headline: str):
         self._oqs_list.append(oqs)

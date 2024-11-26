@@ -3,7 +3,7 @@ Author: weiguo_ma
 Time: 11.23.2024
 Contact: weiguo.m@iphy.ac.cn
 """
-from typing import Optional, Dict, Union, List, Any, Tuple
+from typing import Optional, Dict, Union, List, Any
 
 import tensornetwork as tn
 import torch as tc
@@ -12,7 +12,7 @@ from .AbstractCircuit import QuantumCircuit
 from .NoiseChannel import NoiseChannel
 from .QuantumGates.AbstractGate import QuantumGate
 from .TNNOptimizer import bondTruncate, svdKappa_left2right, checkConnectivity
-from .Tools import select_device, EdgeName2AxisName
+from .Tools import EdgeName2AxisName, count_item
 
 
 class TensorCircuit(QuantumCircuit):
@@ -37,17 +37,13 @@ class TensorCircuit(QuantumCircuit):
             device: The device of the torch;
         """
         self.realNoise = True if (noiseType == 'realNoise' and not ideal) else False
-        self.device = select_device(device)
-        self.dtype = dtype
 
         super(TensorCircuit, self).__init__(
-            self.realNoise, noiseFiles=chiFileDict, dtype=self.dtype, device=self.device
+            self.realNoise, noiseFiles=chiFileDict,
+            chi=chi, kappa=kappa, tnn_optimize=tnn_optimize, dtype=dtype, device=device
         )
 
-        # About program
-        self.fVR = None
         self.qnumber = qn
-        self.state = None
 
         # Noisy Circuit Setting
         self.ideal = ideal
@@ -63,14 +59,6 @@ class TensorCircuit(QuantumCircuit):
                 self.idealNoise = True
             else:
                 raise TypeError(f'Noise type "{noiseType}" is not supported yet.')
-
-        # Density Matrix
-        self.DM = None
-
-        # TNN Truncation
-        self.chi = chi
-        self.kappa = kappa
-        self.tnn_optimize = tnn_optimize
 
     @staticmethod
     def _assignEdges(contracted_node: tn.AbstractNode, minIdx: int):
@@ -199,104 +187,158 @@ class TensorCircuit(QuantumCircuit):
                     )
                     EdgeName2AxisName([_qNodes[_bit]])
 
-    def _calculate_DM(self, state_vector: bool = False,
-                      reduced_index: Optional[List[Union[List[int], int]]] = None,
-                      _dmNodes_before_contraction: bool = False) -> tc.Tensor:
-        """
-        Calculate the density matrix of the state.
-
-        Args:
-            state_vector: if True, the state is a state vector, otherwise, the state is a density matrix.
-            reduced_index: the state[index] to be reduced, which means the physics_con-physics of sub-density matrix
-                                will be connected and contracted.
-
-        Returns:
-            _dm: the density matrix node;
-            _dm_tensor: the density matrix tensor.
-
-        Additional information:
-            A mixed state(noisy situation) is generally cannot be efficiently represented by a state vector but DM.
-
-        Raises:
-            ValueError: if the state is chosen to be a vector but is noisy;
-            ValueError: Reduced index should be empty as [] or None.
-        """
+    def _reduce_dmNodes(self, qubits_nodes: List[tn.AbstractNode],
+                        conj_qubits_nodes: List[tn.AbstractNode],
+                        reduced_index: Optional[List[Union[List[int], int]]] = None):
         if reduced_index is None:
             reduced_index = []
-
-        _state = tn.replicate_nodes(self.state) if _dmNodes_before_contraction else self.state
-
         if reduced_index and max(reduced_index) >= self.qnumber:
             raise ValueError('Reduced index should not be larger than the qubit number.')
 
-        if not state_vector:
-            _qubits_conj = tn.replicate_nodes(_state)
-            for _qubit in _qubits_conj:
-                _qubit.set_tensor(_qubit.tensor.conj())
-
-            # Differential name the conjugate qubits' edges name to permute the order of the indices
-            for _i, _qubit_conj in enumerate(_qubits_conj):
-                _qubit_conj.set_name(f'con_{_qubit_conj.name}')
-                for _ii, _edge in enumerate(_qubit_conj.edges):
-                    if 'physics' in _edge.name:
-                        _edge.set_name(f'con_{_qubit_conj[_ii].name}')
-                        _qubit_conj.axis_names[_ii] = f'con_{_qubit_conj.axis_names[_ii]}'
-
-            for i in range(self.qnumber):
-                if not self.ideal and f'I_{i}' in _state[i].axis_names:
-                    tn.connect(_state[i][f'I_{i}'], _qubits_conj[i][f'I_{i}'])
-
             # Reduced density matrix
-            if reduced_index:
-                reduced_index = [reduced_index] if isinstance(reduced_index, int) else reduced_index
-                if not isinstance(reduced_index, list):
-                    raise TypeError('reduced_index should be int or list[int]')
-                for _idx in reduced_index:
-                    tn.connect(_state[_idx][f'physics_{_idx}'], _qubits_conj[_idx][f'con_physics_{_idx}'])
+        if reduced_index:
+            reduced_index = [reduced_index] if isinstance(reduced_index, int) else reduced_index
+            if not isinstance(reduced_index, list):
+                raise TypeError('reduced_index should be int or list[int]')
+            for _idx in reduced_index:
+                tn.connect(qubits_nodes[_idx][f'physics_{_idx}'], conj_qubits_nodes[_idx][f'con_physics_{_idx}'])
 
-            if _dmNodes_before_contraction:
-                return _state + _qubits_conj
+    def _create_dmNodes(self, reduced_index: Optional[List] = None):
+        _state, _qubits_conj = tn.replicate_nodes(self.stateNodes), tn.replicate_nodes(self.stateNodes)
+        for _qubit in _qubits_conj:  # make conj(), which is much faster than conjugate=True in replicate_nodes()
+            _qubit.set_tensor(_qubit.tensor.conj())
 
-            _numList = [_i for _i in range(self.qnumber) if _i not in reduced_index]
-            _output_edge_order = (
-                    [_state[i][f'physics_{i}'] for i in _numList] +
-                    [_qubits_conj[i][f'con_physics_{i}'] for i in _numList]
-            )
-            _dm = tn.contractors.auto(_state + _qubits_conj, output_edge_order=_output_edge_order)
+        for _i, _qubit_conj in enumerate(_qubits_conj):
+            _qubit_conj.set_name(f'con_{_qubit_conj.name}')
+            for _ii, _edge in enumerate(_qubit_conj.edges):
+                if 'physics' in _edge.name:
+                    _edge.set_name(f'con_{_qubit_conj[_ii].name}')
+                    _qubit_conj.axis_names[_ii] = f'con_{_qubit_conj.axis_names[_ii]}'
 
-            _reshape_size = self.qnumber - len(reduced_index)
-            self.DM = _dm.tensor.reshape((2 ** _reshape_size, 2 ** _reshape_size))
-            return self.DM
+        for i in range(self.qnumber):
+            if not self.ideal and f'I_{i}' in _state[i].axis_names:
+                tn.connect(_state[i][f'I_{i}'], _qubits_conj[i][f'I_{i}'])
 
+        self._reduce_dmNodes(_state, _qubits_conj, reduced_index)
+        return _state, _qubits_conj
+
+    def _contract_dm(self,
+                     _state: List[tn.AbstractNode],
+                     _qubits_conj: List[tn.AbstractNode],
+                     reduced_index: Optional[List] = None):
+        _reshape_size = 2 ** (self.qnumber - len(reduced_index))
+        _numList = [_i for _i in range(self.qnumber) if _i not in reduced_index]
+        _output_edge_order = (
+                [_state[i][f'physics_{i}'] for i in _numList] +
+                [_qubits_conj[i][f'con_physics_{i}'] for i in _numList]
+        )
+
+        _dm = tn.contractors.auto(
+            _state + _qubits_conj, output_edge_order=_output_edge_order
+        ).tensor.reshape((_reshape_size, _reshape_size))
+
+        return _dm
+
+    def cal_vector(self):
+        if not self.ideal:
+            raise ValueError('Noisy circuit cannot be represented by state vector efficiently.')
+
+        _state = tn.replicate_nodes(self.stateNodes)
+        _outOrder = [_state[i][f'physics_{i}'] for i in list(range(self.qnumber))]
+        _vector = tn.contractors.auto(_state, output_edge_order=_outOrder).tensor.reshape((2 ** self.qnumber, 1))
+        self._vector = _vector
+        return _vector
+
+    def cal_dmNodes(self, reduced_index: Optional[List] = None):
+        if reduced_index is None:
+            reduced_index = []
+
+        _state, _qubits_conj = self._create_dmNodes(reduced_index)
+        self._dmNodes = _state + _qubits_conj
+        return self._dmNodes
+
+    def cal_dm(self, reduced_index: Optional[List] = None):
+        if reduced_index is None:
+            reduced_index = []
+
+        if self._dmNodes is None:
+            _state, _qubits_conj = self._create_dmNodes()
+            self._dmNodes = tn.replicate_nodes(_state + _qubits_conj)
         else:
-            if not self.fVR and not self.ideal:
-                raise ValueError('Noisy circuit cannot be represented by state vector efficiently.')
-            if reduced_index is not None:
-                raise ValueError('State vector cannot efficiently represents the reduced density matrix.')
+            _nodes = tn.replicate_nodes(self._dmNodes)
+            _state, _qubits_conj = _nodes[:self.qnumber], _nodes[self.qnumber + 1:]
 
-            _outOrder = [_state[i][f'physics_{i}'] for i in list(range(self.qnumber))]
-            _vector = tn.contractors.auto(_state, output_edge_order=_outOrder)
+        _dm = self._contract_dm(_state, _qubits_conj, reduced_index)
+        self._dm = _dm
+        return _dm
 
-            self.DM = _vector.tensor.reshape((2 ** self.qnumber, 1)) if not self.fVR else _vector.tensor
-            return self.DM
+    def _conditional_sample(self,
+                            _history: List[int],
+                            _dmNodes: List[tn.AbstractNode],
+                            _conj_dmNodes: List[tn.AbstractNode],
+                            _idx: int, _ori_list: List[int],
+                            _proj_0: tn.AbstractNode, _proj_1: tn.AbstractNode
+                            ) -> int:
+        _proj_reduced, _ignored_reduced = _ori_list[:_idx], _ori_list[_idx + 1:]
 
-    def forward(self,
-                state: List[tn.AbstractNode],
-                require_nodes: bool = False,
-                require_dm_nodes: bool = False,
-                density_matrix: bool = True,
-                state_vector: bool = False,
-                reduced_index: Optional[List] = None,
-                forceVectorRequire: bool = False
-                ) -> Union[List[tn.AbstractNode], tc.Tensor, Tuple[List[tn.AbstractNode], tc.Tensor]]:
-        """
-        Forward propagation of tensornetwork.
+        _contract_nodes = []
+        with tn.NodeCollection(_contract_nodes):
+            _proj_s = [
+                (tn.replicate_nodes([_proj_0])[0], tn.replicate_nodes([_proj_0])[0])
+                if _his == 0 else (tn.replicate_nodes([_proj_1])[0], tn.replicate_nodes([_proj_1])[0])
+                for _his in _history
+            ]
 
-        Returns:
-            self.state: tensornetwork after forward propagation.
-        """
-        self.state = state
-        self.qnumber, self.fVR = len(state), forceVectorRequire
+            _dmNodes_intermediate = tn.replicate_nodes(_dmNodes)
+            _conj_dmNodes_intermediate = tn.replicate_nodes(_conj_dmNodes)
+            self._reduce_dmNodes(_dmNodes_intermediate, _conj_dmNodes_intermediate, reduced_index=_ignored_reduced)
+
+            for _j, (_proj, _con_proj) in enumerate(_proj_s):
+                _proj['proj'] ^ _dmNodes_intermediate[_j][f'physics_{_j}']
+                _con_proj['proj'] ^ _conj_dmNodes_intermediate[_j][f'con_physics_{_j}']
+
+        _probs = tc.diag(
+            tn.contractors.auto(
+                _contract_nodes, output_edge_order=[
+                    _dmNodes_intermediate[_idx][f'physics_{_idx}'],
+                    _conj_dmNodes_intermediate[_idx][f'con_physics_{_idx}']
+                ]
+            ).tensor
+        )
+
+        return tc.multinomial(_probs.real, num_samples=1).item()
+
+    def fakeSample(self, shots: int = 1024, sample_string: bool = True):
+        _projection_0 = tn.Node(
+            tc.tensor([1, 0], dtype=self.dtype, device=self.device), axis_names=['proj'], name='proj_0'
+        )
+        _projection_1 = tn.Node(
+            tc.tensor([0, 1], dtype=self.dtype, device=self.device), axis_names=['proj'], name='proj_1'
+        )
+        _ori_list = [num for num in range(self.qnumber)]
+        _dmNodes, _conj_dmNodes = self._create_dmNodes()
+
+        _bitStrings = []
+        for shot in range(shots):
+            _choices = []
+            for _i in range(self.qnumber):
+                _choice = self._conditional_sample(
+                    _choices, _dmNodes, _conj_dmNodes,
+                    _idx=_i, _ori_list=_ori_list, _proj_0=_projection_0, _proj_1=_projection_1
+                )
+                _choices.append(_choice)
+            _bitStrings.append(_choices)
+
+        if sample_string:
+            _bitStrings = [''.join(map(str, _stringList)) for _stringList in _bitStrings]
+
+        self._samples = _bitStrings
+        self._counts = count_item(_bitStrings)
+
+        return self._samples, self._counts
+
+    def evolve(self, state: List[tn.AbstractNode]):
+        self._initState = tn.replicate_nodes(state)
 
         for _i, layer in enumerate(self.layers):
             self._add_gate(state, _i, _oqs=self._oqs_list[_i])
@@ -314,15 +356,11 @@ class TensorCircuit(QuantumCircuit):
         if self.tnn_optimize and not self.ideal and self.kappa is not None:
             svdKappa_left2right(state, kappa=self.kappa)
 
-        if require_nodes and not density_matrix:
-            if require_dm_nodes:
-                return self.state, self._calculate_DM(
-                    state_vector=state_vector, reduced_index=reduced_index, _dmNodes_before_contraction=True
-                )
-            return self.state
-        elif density_matrix and not require_nodes:
-            return self._calculate_DM(state_vector=state_vector, reduced_index=reduced_index)
-        else:
-            _nodes = tn.replicate_nodes(self.state)
-            _dm = self._calculate_DM(state_vector=state_vector, reduced_index=reduced_index)
-            return _nodes, _dm
+        self._stateNodes = state  # Same memory id()
+
+    # Hidden interface
+    def forward(self, state: List[tn.AbstractNode]):
+        """
+        Forward propagation of tensornetwork.
+        """
+        self.evolve(state)
