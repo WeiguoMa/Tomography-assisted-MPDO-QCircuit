@@ -30,7 +30,7 @@ def _randomized_svd(torch: Any, M, n_components: int, n_overSamples: int = 5,
     if random_state is not None:
         _rng.manual_seed(random_state)
 
-    _Q = torch.randn(_m, n_components + n_overSamples, dtype=torch.complex64, generator=_rng)
+    _Q = torch.randn(_m, n_components + n_overSamples, dtype=M.dtype, generator=_rng)
 
     if n_iter == 'auto':
         n_iter = 6 if _m >= _n else 4
