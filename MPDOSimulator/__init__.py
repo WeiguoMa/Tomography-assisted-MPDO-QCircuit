@@ -6,8 +6,10 @@ __email__ = "Weiguo.m@iphy.ac.cn"
 
 from .Circuit import TensorCircuit
 from . import Tools
+from . import dmOperations
 
 __all__ = [
     'TensorCircuit',
-    'Tools'
+    'Tools',
+    'dmOperations'
 ]

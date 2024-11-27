@@ -13,6 +13,7 @@ from .NoiseChannel import NoiseChannel
 from .QuantumGates.AbstractGate import QuantumGate
 from .TNNOptimizer import bondTruncate, svdKappa_left2right, checkConnectivity
 from .Tools import EdgeName2AxisName, count_item
+from .dmOperations import reduce_dmNodes
 
 
 class TensorCircuit(QuantumCircuit):
@@ -187,22 +188,6 @@ class TensorCircuit(QuantumCircuit):
                     )
                     EdgeName2AxisName([_qNodes[_bit]])
 
-    def _reduce_dmNodes(self, qubits_nodes: List[tn.AbstractNode],
-                        conj_qubits_nodes: List[tn.AbstractNode],
-                        reduced_index: Optional[List[Union[List[int], int]]] = None):
-        if reduced_index is None:
-            reduced_index = []
-        if reduced_index and max(reduced_index) >= self.qnumber:
-            raise ValueError('Reduced index should not be larger than the qubit number.')
-
-            # Reduced density matrix
-        if reduced_index:
-            reduced_index = [reduced_index] if isinstance(reduced_index, int) else reduced_index
-            if not isinstance(reduced_index, list):
-                raise TypeError('reduced_index should be int or list[int]')
-            for _idx in reduced_index:
-                tn.connect(qubits_nodes[_idx][f'physics_{_idx}'], conj_qubits_nodes[_idx][f'con_physics_{_idx}'])
-
     def _create_dmNodes(self, reduced_index: Optional[List] = None):
         _state, _qubits_conj = tn.replicate_nodes(self.stateNodes), tn.replicate_nodes(self.stateNodes)
         for _qubit in _qubits_conj:  # make conj(), which is much faster than conjugate=True in replicate_nodes()
@@ -219,7 +204,7 @@ class TensorCircuit(QuantumCircuit):
             if not self.ideal and f'I_{i}' in _state[i].axis_names:
                 tn.connect(_state[i][f'I_{i}'], _qubits_conj[i][f'I_{i}'])
 
-        self._reduce_dmNodes(_state, _qubits_conj, reduced_index)
+        reduce_dmNodes(_state, _qubits_conj, reduced_index)
         return _state, _qubits_conj
 
     def _contract_dm(self,
@@ -272,13 +257,11 @@ class TensorCircuit(QuantumCircuit):
         self._dm = _dm
         return _dm
 
-    def _conditional_sample(self,
-                            _history: List[int],
-                            _dmNodes: List[tn.AbstractNode],
+    @staticmethod
+    def _conditional_sample(_history: List[int], _dmNodes: List[tn.AbstractNode],
                             _conj_dmNodes: List[tn.AbstractNode],
                             _idx: int, _ori_list: List[int],
-                            _proj_0: tn.AbstractNode, _proj_1: tn.AbstractNode
-                            ) -> int:
+                            _proj_0: tn.AbstractNode, _proj_1: tn.AbstractNode) -> int:
         _proj_reduced, _ignored_reduced = _ori_list[:_idx], _ori_list[_idx + 1:]
 
         _contract_nodes = []
@@ -291,7 +274,7 @@ class TensorCircuit(QuantumCircuit):
 
             _dmNodes_intermediate = tn.replicate_nodes(_dmNodes)
             _conj_dmNodes_intermediate = tn.replicate_nodes(_conj_dmNodes)
-            self._reduce_dmNodes(_dmNodes_intermediate, _conj_dmNodes_intermediate, reduced_index=_ignored_reduced)
+            reduce_dmNodes(_dmNodes_intermediate, _conj_dmNodes_intermediate, reduced_index=_ignored_reduced)
 
             for _j, (_proj, _con_proj) in enumerate(_proj_s):
                 _proj['proj'] ^ _dmNodes_intermediate[_j][f'physics_{_j}']
