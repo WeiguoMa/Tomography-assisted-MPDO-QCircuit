@@ -231,17 +231,20 @@ reusability of components, which can lead to a more maintainable and scalable pr
 ## Initialize Program
 
 ```python
+from torch import complex64
 import tensornetwork as tn
 import MPDOSimulator as Simulator
 
 tn.set_default_backend("pytorch")
+
+DTYPE, DEVICE = complex64, 'cpu'
 ```
 
 ## Basic Information of Quantum Circuit
 
 ```python
 # Basic information of circuit
-qnumber = 4
+qnumber = 5
 ideal_circuit = False  # or True
 noiseType = 'realNoise'  # or 'realNoise' or 'idealNoise'
 
@@ -275,12 +278,24 @@ An ideal=True circuit cannot work with realNoise=True,
 ```python
 # Establish a quantum circuit
 circuit = Simulator.TensorCircuit(qn=qnumber, ideal=ideal_circuit, noiseType=noiseType,
-                        chiFileDict=chiFileNames, chi=chi, kappa=kappa, chip='beta4Test', device='cpu')
+                        chiFileDict=chiFileNames, chi=chi, kappa=kappa, chip='beta4Test', dtype=DTYPE, device=DEVICE)
 
+# Test 1
+# circuit.y(1)
+# circuit.h(2)
+# circuit.cnot(1, 0)
+# circuit.x(0)
+# circuit.z(1)
+# circuit.y(1)
+# circuit.cnot(2, 1)
+
+# GHZ TEST
 circuit.h(0)
 circuit.cnot(0, 1)
 circuit.cnot(1, 2)
 circuit.cnot(2, 3)
+circuit.cnot(3, 4)
+
 
 # Set TensorNetwork Truncation
 circuit.truncate()
@@ -302,26 +317,50 @@ Certainly, people can input an arbitrary state with
 """
 
 # Generate an initial quantum state
-state = Simulator.Tools.create_ket0Series(qnumber)
+state = Simulator.Tools.create_ket0Series(qnumber, dtype=DTYPE, device=DEVICE)
 ```
-
-## Calculate Ket-space and Density Matrix $\rho$
+## Evolve the quantum circuit
 
 ```python
-"""
-State returns a state vector for pure quantum state, or a density matrix.
+# Evolve the circuit with given state, same circuit can be reused.
+circuit.evolve(state)
+# or with the call of forword()
+# circuit(state)
+```
 
-    Args:
-     	state_vector: bool, if True, return a state vector, else return a density matrix.
-     	reduced_index: list, calculate the reduced density matrix with the given index qubit is reduced.
-"""
+## Computing multiple properties of quantum systems
 
-# Calculate probability distribution
-prob_dict = Simulator.Tools.density2prob(state, tol=5e-4)  # Set _dict=False to return a np.array
-print(prob_dict)
+```python
+# Function 1: Sample from the given circuit without getting density matrix.
+    # This could be slower for small system than getting its full density matrix.
+counts = circuit.fakeSample(1024)[-1]       # This function returns (measurement_outcomes, counts_statistical)
+print(counts)
 
-# plot probability distribution
-Simulator.Tools.plot_histogram(prob_dict, title=f'"{noiseType}" Probability Distribution', filename='./figs/test.pdf', show=False)
+## Plot the counts
+# Simulator.Tools.plot_histogram(
+#     counts, title=f'"{noiseType}" Probability Distribution', filename='./figs/test.pdf', show=False
+# )
+
+# Function 2: Get state node (tensor network without contraction):
+# state_nodes = circuit.stateNodes
+
+# Function 3: Get density matrix (contracted):
+    # This function returns the density matrix of the quantum system, which could cost much memory for a huge system.
+    # After the calculation, you could call circuit.dm to get this property.
+# dm = circuit.cal_dm()
+
+# Function 4: Get density matrix nodes (tensor network without contraction):
+    # After the calculation, you could call circuit.dmNodes to get this property.
+# dmNodes = circuit.cal_dmNodes()
+
+# Function 5: Get state vector (contracted):
+    # While you are simulating the IDEAL quantum circuit, you could call this to get a \ket state matrix.
+    # After the calculation, you could call circuit.vector to get this property.
+# vector = circuit.cal_vector()
+
+
+# To reuse all the property in Nodes,
+# I recommend you to use tensornetwork.replicate_nodes() for keeping the original nodes, which are in memory, unchanged.
 ```
 
 ## Install as a package
