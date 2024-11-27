@@ -268,11 +268,11 @@ def tc_expect(oper: torch_tensor, state: torch_tensor) -> torch_tensor:
     # Handling a list of operators
     elif isinstance(oper, (list, torch_tensor)):
         if isinstance(state, Tensor):
-            return torch_tensor([_single_expect(o, state) for o in oper], dtype=complex64)
+            return torch_tensor([_single_expect(o, state) for o in oper], dtype=state.dtype)
 
     # Handling a list of states
     elif isinstance(state, (list, torch_tensor)):
-        return torch_tensor([_single_expect(oper, x) for x in state], dtype=complex64)
+        return torch_tensor([_single_expect(oper, x) for x in state], dtype=oper.dtype)
 
     else:
         raise TypeError('Arguments must be torch.Tensors or lists thereof')
@@ -293,7 +293,7 @@ def density2prob(rho_in: torch_tensor, bases: Optional[Dict] = None,
 
     if bases is None:
         # Generate basis states
-        _view_basis = [zeros((2 ** _qn, 1), dtype=complex64).scatter_(0, torch_tensor([[ii]]), 1) for ii in
+        _view_basis = [zeros((2 ** _qn, 1), dtype=rho_in.dtype).scatter_(0, torch_tensor([[ii]]), 1) for ii in
                        range(2 ** _qn)]
         # Generate basis names
         _basis_name = [''.join(ii) for ii in itertools.product('01', repeat=_qn)]
@@ -563,7 +563,7 @@ def sqrt_matrix(density_matrix: torch_tensor) -> torch_tensor:
     """
     evs, vecs = torch_eigh(density_matrix)
     evs = where(evs > 0.0, evs, 0.0)
-    evs = real(evs).to(complex64)
+    evs = real(evs).to(density_matrix.dtype)
     return vecs @ diag(sqrt(evs)) @ vecs.T.conj()
 
 
@@ -637,15 +637,22 @@ def validDensityMatrix(rho, methodIdx: int = 1, constraints: str = 'eq',
     res = minimize(fitFunc, x0, method=optMethods[methodIdx], constraints=cons, bounds=bounds)
     newPs = res.x
 
-    psi, newPs = torch_tensor(psi), torch_tensor(newPs, dtype=complex64)
+    psi, newPs = torch_tensor(psi), torch_tensor(newPs, dtype=rho.dtype)
 
     rho_semi = psi @ np.diag(newPs) @ psi.T.conj()
     return rho_semi.to(device=device)
 
 
 def count_item(data: Union[List[List[int]], List[str]]):
-    return dict(
+    counted = dict(
         Counter(
-            [tuple(item) if isinstance(item, List) else item for item in data]
+            [tuple(item) if isinstance(item, list) else item for item in data]
         )
     )
+    sorted_counted = dict(
+        sorted(
+            counted.items(),
+            key=lambda x: int(''.join(map(str, x[0])) if isinstance(x[0], tuple) else x[0])
+        )
+    )
+    return sorted_counted

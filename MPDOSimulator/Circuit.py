@@ -50,7 +50,7 @@ class TensorCircuit(QuantumCircuit):
         self.unified, self.idealNoise = False, False
 
         if not self.ideal:
-            self.Noise = NoiseChannel(chip=chip, device=self.device)
+            self.Noise = NoiseChannel(chip=chip, dtype=self.dtype, device=self.device)
             if noiseType == 'unified':
                 self.unified = True
             elif noiseType == 'realNoise':
@@ -266,7 +266,7 @@ class TensorCircuit(QuantumCircuit):
             self._dmNodes = tn.replicate_nodes(_state + _qubits_conj)
         else:
             _nodes = tn.replicate_nodes(self._dmNodes)
-            _state, _qubits_conj = _nodes[:self.qnumber], _nodes[self.qnumber + 1:]
+            _state, _qubits_conj = _nodes[:self.qnumber], _nodes[self.qnumber:]
 
         _dm = self._contract_dm(_state, _qubits_conj, reduced_index)
         self._dm = _dm
@@ -339,6 +339,7 @@ class TensorCircuit(QuantumCircuit):
 
     def evolve(self, state: List[tn.AbstractNode]):
         self._initState = tn.replicate_nodes(state)
+        [state.set_tensor(state.tensor.to(dtype=self.dtype, device=self.device)) for state in self._initState]
 
         for _i, layer in enumerate(self.layers):
             self._add_gate(state, _i, _oqs=self._oqs_list[_i])
