@@ -339,6 +339,9 @@ def plot_histogram(prob_psi: Union[Dict, np.ndarray],
     if not threshold:
         threshold = 0.
     if isinstance(prob_psi, Dict):
+        if list(prob_psi.values())[0] > 1:
+            total_shots = sum(prob_psi.values())
+            prob_psi = {key: shots / total_shots for key, shots in prob_psi.items()}
         qnumber = len(next(iter(prob_psi)))
         _basis_name, _prob_distribution = zip(*[(k, v) for k, v in prob_psi.items() if v >= threshold])
     elif isinstance(prob_psi, np.ndarray):

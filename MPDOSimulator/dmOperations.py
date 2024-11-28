@@ -15,7 +15,7 @@ def reduce_dmNodes(qubits_nodes: List[tn.AbstractNode],
     Reduce nodes in memory.
     """
     if reduced_index is None:
-        reduced_index = []
+        return None
     if reduced_index and max(reduced_index) >= len(qubits_nodes):
         raise ValueError('Reduced index should not be larger than the qubit number.')
 
