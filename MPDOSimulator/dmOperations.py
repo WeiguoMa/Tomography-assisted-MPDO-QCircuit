@@ -43,7 +43,7 @@ def trace_rho(dmNodes: List[tn.AbstractNode]):
 def trace_rho_rho(dmNodes_0: List[tn.AbstractNode], dmNodes_1: Optional[List[tn.AbstractNode]] = None) -> float:
     _qNum = len(dmNodes_0) // 2
     if dmNodes_1 is not None and len(dmNodes_1) // 2 != _qNum:
-            raise ValueError('Density matrices should have same number of nodes.')
+        raise ValueError('Density matrices should have same number of nodes.')
 
     _all_nodes = []
     with tn.NodeCollection(_all_nodes):
