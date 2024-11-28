@@ -6,6 +6,7 @@ Contact: weiguo.m@iphy.ac.cn
 from typing import Optional, List, Union
 
 import tensornetwork as tn
+from torch import Tensor
 
 
 def reduce_dmNodes(qubits_nodes: List[tn.AbstractNode],
@@ -36,7 +37,7 @@ def trace_rho(dmNodes: List[tn.AbstractNode]):
     for i in range(_qNum):
         if _qubits[i][f'physics_{i}'].is_dangling():
             _qubits[i][f'physics_{i}'] ^ _qubits_conj[i][f'con_physics_{i}']
-    return tn.contractors.auto(_dmNodes).tensor.abs().item()
+    return tn.contractors.auto(_dmNodes).tensor.real.item()
 
 
 def trace_rho_rho(dmNodes_0: List[tn.AbstractNode], dmNodes_1: Optional[List[tn.AbstractNode]] = None) -> float:
@@ -54,7 +55,7 @@ def trace_rho_rho(dmNodes_0: List[tn.AbstractNode], dmNodes_1: Optional[List[tn.
             if _dmNodes_0[idx][f'physics_{idx}'].is_dangling():
                 _dmNodes_0[idx][f'physics_{idx}'] ^ _dmNodes_1[idx + _qNum][f'con_physics_{idx}']
 
-    return tn.contractors.auto(_all_nodes).tensor.abs().item()
+    return tn.contractors.auto(_all_nodes).tensor.real.item()
 
 
 def trace_rho2(dmNodes: List[tn.AbstractNode]) -> float:
@@ -101,3 +102,41 @@ def trace_composited_rho2(*dmNodes: List[tn.AbstractNode]) -> float:
             _sum += trace_rho_rho(dmNodes[_i], dmNodes[_j])
 
     return _sum / (_sliceNum ** 2)
+
+
+def expect(dmNodes: List[tn.AbstractNode],
+           observables: Union[Tensor, List[Tensor]], oqs: Union[int, List[Union[List[int], int]]]):
+    qnumber = len(dmNodes) // 2
+    oqs = [oqs] if isinstance(oqs, int) else oqs
+    observables = [observables] if isinstance(observables, Tensor) else observables
+
+    expectation_values = [0] * len(observables)
+    for j, (obs, oq) in enumerate(zip(observables, oqs)):
+        oq = [oq] if isinstance(oq, int) else oq
+        _all_nodes = []
+        with tn.NodeCollection(_all_nodes):
+            try:
+                obs = obs.reshape([2] * 2 * qnumber)
+            except RuntimeError:
+                raise ValueError(f'Shape of the No.{j} obs is not valid.')
+
+            obs_dim, oq_dim = obs.dim() // 2, len(oq)
+            if obs_dim > qnumber or oq_dim > qnumber:
+                raise ValueError(f'Dim of No.{j} - oqs: {obs_dim} or obs: {oq_dim} exceeds the system size.')
+            if obs_dim != oq_dim:
+                raise ValueError(f'Dim of No.{j} - oqs and obs do not match.')
+
+            _axis_names = [f'physics_{_i}' for _i in oq] + [f'con_physics_{_i}' for _i in oq]
+            _obs_node = tn.Node(obs, name=f'obs_{oq}', axis_names=_axis_names)
+
+            _dmNodes = tn.replicate_nodes(dmNodes)
+            for _idx in range(qnumber):
+                try:
+                    _obs_node[f'con_physics_{_idx}'] ^ _dmNodes[_idx][f'physics_{_idx}']
+                    _obs_node[f'physics_{_idx}'] ^ _dmNodes[_idx + qnumber][f'con_physics_{_idx}']
+                except ValueError:
+                    _dmNodes[_idx][f'physics_{_idx}'] ^ _dmNodes[_idx + qnumber][f'con_physics_{_idx}']
+
+        expectation_values[j] = tn.contractors.auto(_all_nodes).tensor.real.item()
+
+    return expectation_values
