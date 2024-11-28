@@ -7,6 +7,7 @@ from typing import Optional, Dict, Union, List, Any
 
 import tensornetwork as tn
 import torch as tc
+from tqdm import tqdm
 
 from .AbstractCircuit import QuantumCircuit
 from .NoiseChannel import NoiseChannel
@@ -301,16 +302,17 @@ class TensorCircuit(QuantumCircuit):
         _ori_list = [num for num in range(self.qnumber)]
         _dmNodes, _conj_dmNodes = self._create_dmNodes()
 
-        _bitStrings = []
-        for shot in range(shots):
-            _choices = []
-            for _i in range(self.qnumber):
-                _choice = self._conditional_sample(
-                    _choices, _dmNodes, _conj_dmNodes,
-                    _idx=_i, _ori_list=_ori_list, _proj_0=_projection_0, _proj_1=_projection_1
+        _bitStrings = [[] for _ in range(shots)]
+
+        for _i in tqdm(range(shots), desc="Processing Shots"):
+            _choices = [-1] * self.qnumber
+            for _j in range(self.qnumber):
+                _choices[_j] = self._conditional_sample(
+                    _choices[:_j], _dmNodes, _conj_dmNodes,
+                    _idx=_j, _ori_list=_ori_list, _proj_0=_projection_0, _proj_1=_projection_1
                 )
-                _choices.append(_choice)
-            _bitStrings.append(_choices)
+
+            _bitStrings[_i] = _choices
 
         if sample_string:
             _bitStrings = [''.join(map(str, _stringList)) for _stringList in _bitStrings]
