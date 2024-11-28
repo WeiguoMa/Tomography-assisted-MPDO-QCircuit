@@ -3,8 +3,7 @@ Author: Weiguo Ma
 Time: 11.27.2024
 Contact: weiguo.m@iphy.ac.cn
 """
-from multiprocessing.managers import Value
-from typing import Optional, List, Union, Iterable
+from typing import Optional, List, Union
 
 import tensornetwork as tn
 

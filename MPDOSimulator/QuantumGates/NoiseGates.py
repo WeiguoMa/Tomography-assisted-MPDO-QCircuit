@@ -37,11 +37,11 @@ class CZEXPGate(QuantumGate):
 
     @property
     def rank(self):
-        return 4
+        return 5
 
     @property
     def dimension(self):
-        return [[2, 2], [2, 2]]
+        return [[2, 2], [2, 2], [16]]
 
     @property
     def single(self) -> bool:
@@ -71,17 +71,17 @@ class CPEXPGate(QuantumGate):
         # NO input may cause high memory cost and time cost
         if self._matrix is None:
             warnings.warn('No (sufficient) CP input files, use default tensor.')
-            return cpExp_channel().to(dtype=self.dtype, device=self.device)
+            return cpExp_channel(dtype=self.dtype, device=self.device)
         else:
             return self._matrix.to(dtype=self.dtype, device=self.device)
 
     @property
     def rank(self):
-        return 4
+        return 5
 
     @property
     def dimension(self):
-        return [[2, 2], [2, 2]]
+        return [[2, 2], [2, 2], [16]]
 
     @property
     def single(self) -> bool:

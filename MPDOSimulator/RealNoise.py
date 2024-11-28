@@ -173,7 +173,7 @@ def czExp_channel(filename: Optional[str] = None, dtype=tc.complex64, device: Un
 def cpExp_channel(filename: Optional[str] = None, dtype=tc.complex64, device: Union[int, str] = 'cpu'):
     if filename is None:
         filename = os.path.join(os.path.dirname(__file__), 'data/chi/cpDefault.mat')
-    _chi = readExpChi(filename=None)
+    _chi = readExpChi(filename=filename)
     _cpExp_tensor = tc.stack(noisyTensor(_chi))
     _cpExp_tensor = tc.einsum('ijlmn -> jlmni', _cpExp_tensor)
     return _cpExp_tensor.to(dtype=dtype, device=device)
