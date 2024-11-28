@@ -64,7 +64,7 @@ class RZGate(QuantumGate):
     def tensor(self):
         return torch_tensor(
             data=[[exp(-1j * self.theta / 2), 0], [0, exp(1j * self.theta / 2)]],
-            dtype=self.dtype, device=self.device
+            dtype=self.dtype, device=self.device, requires_grad=self.theta.requires_grad
         )
 
     @property
@@ -139,7 +139,7 @@ class RZZGate(QuantumGate):
         _minus, _plus = exp(-1j * self.theta / 2), exp(1j * self.theta / 2)
         return torch_tensor(
             data=[[_minus, 0, 0, 0], [0, _plus, 0, 0], [0, 0, _plus, 0], [0, 0, 0, _minus]],
-            dtype=self.dtype, device=self.device
+            dtype=self.dtype, device=self.device, requires_grad=self.theta.requires_grad
         ).reshape((2, 2, 2, 2))
 
     @property

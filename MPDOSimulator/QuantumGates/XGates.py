@@ -63,7 +63,10 @@ class RXGate(QuantumGate):
     @property
     def tensor(self):
         _tC, _tS = cos(self.theta / 2), sin(self.theta / 2)
-        return tensor_torch(data=[[_tC, -1j * _tS], [-1j * _tS, _tC]], dtype=self.dtype, device=self.device)
+        return tensor_torch(
+            data=[[_tC, -1j * _tS], [-1j * _tS, _tC]],
+            dtype=self.dtype, device=self.device, requires_grad=self.theta.requires_grad
+        )
 
     @property
     def rank(self):
@@ -137,7 +140,7 @@ class RXXGate(QuantumGate):
         _tC, _tS = cos(self.theta / 2), sin(self.theta / 2)
         return tensor_torch(
             data=[[_tC, 0, 0, -1j * _tS], [0, _tC, -1j * _tS, 0], [0, -1j * _tS, _tC, 0], [-1j * _tS, 0, 0, _tC]],
-            dtype=self.dtype, device=self.device
+            dtype=self.dtype, device=self.device, requires_grad=self.theta.requires_grad
         ).reshape((2, 2, 2, 2))
 
     @property

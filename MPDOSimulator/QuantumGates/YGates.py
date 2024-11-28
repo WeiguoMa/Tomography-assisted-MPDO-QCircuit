@@ -63,7 +63,10 @@ class RYGate(QuantumGate):
     @property
     def tensor(self):
         _tC, _tS = cos(self.theta / 2), sin(self.theta / 2)
-        return torch_tensor(data=[[_tC, -_tS], [_tS, _tC]], dtype=self.dtype, device=self.device)
+        return torch_tensor(
+            data=[[_tC, -_tS], [_tS, _tC]],
+            dtype=self.dtype, device=self.device, requires_grad=self.theta.requires_grad
+        )
 
     @property
     def rank(self):
@@ -138,7 +141,7 @@ class RYYGate(QuantumGate):
         _tC, _tS = cos(self.theta / 2), sin(self.theta / 2)
         return torch_tensor(
             data=[[_tC, 0, 0, -_tS], [0, _tC, _tS, 0], [0, -_tS, _tC, 0], [_tS, 0, 0, _tC]],
-            dtype=self.dtype, device=self.device
+            dtype=self.dtype, device=self.device, requires_grad=self.theta.requires_grad
         ).reshape((2, 2, 2, 2))
 
     @property

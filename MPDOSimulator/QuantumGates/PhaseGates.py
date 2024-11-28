@@ -96,7 +96,10 @@ class PGate(QuantumGate):
 
     @property
     def tensor(self):
-        return torch_tensor(data=[[1, 0], [0, exp(self.theta * 1j)]], dtype=self.dtype, device=self.device)
+        return torch_tensor(
+            data=[[1, 0], [0, exp(self.theta * 1j)]],
+            dtype=self.dtype, device=self.device, requires_grad=self.theta.requires_grad
+        )
 
     @property
     def rank(self):
@@ -134,7 +137,7 @@ class CPGate(QuantumGate):
     def tensor(self):
         return torch_tensor(
             data=[[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, exp(1j * self.theta)]],
-            dtype=self.dtype, device=self.device
+            dtype=self.dtype, device=self.device, requires_grad=self.theta.requires_grad
         ).reshape((2, 2, 2, 2))
 
     @property

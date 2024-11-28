@@ -97,7 +97,10 @@ class U1Gate(QuantumGate):
 
     @property
     def tensor(self):
-        return torch_tensor(data=[[1, 0], [0, exp(1j * self.theta)]], dtype=self.dtype, device=self.device)
+        return torch_tensor(
+            data=[[1, 0], [0, exp(1j * self.theta)]],
+            dtype=self.dtype, device=self.device, requires_grad=self.theta.requires_grad
+        )
 
     @property
     def rank(self):
@@ -134,7 +137,10 @@ class U2Gate(QuantumGate):
     @property
     def tensor(self):
         _lM, _pM = exp(1j * self._lam), exp(1j * self.phi)
-        return torch_tensor(data=[[1, -_lM], [_pM, _lM * _pM]], device=self.device, dtype=self.dtype) / np.sqrt(2)
+        return torch_tensor(
+            data=[[1, -_lM], [_pM, _lM * _pM]],
+            device=self.device, dtype=self.dtype, requires_grad=(self.phi.requires_grad or self.lam.requires_grad)
+        ) / np.sqrt(2)
 
     @property
     def rank(self):
@@ -172,8 +178,11 @@ class U3Gate(QuantumGate):
     def tensor(self):
         _lM, _pM = exp(1j * self.lam), exp(1j * self.phi)
         _tC, _tS = cos(self.theta / 2), sin(self.theta / 2)
-        return torch_tensor(data=[[_tC, -_lM * _tS], [_pM * _tS, _lM * _pM * _tC]], device=self.device,
-                            dtype=self.dtype)
+        return torch_tensor(
+            data=[[_tC, -_lM * _tS], [_pM * _tS, _lM * _pM * _tC]],
+            device=self.device, dtype=self.dtype,
+            requires_grad=(self.theta.requires_grad or self.phi.requires_grad or self.lam.requires_grad)
+        )
 
     @property
     def rank(self):
