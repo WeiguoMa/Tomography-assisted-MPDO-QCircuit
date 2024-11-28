@@ -133,12 +133,16 @@ streamlined approach is one of the key benefits of using tensornetwork to repres
 simplifies computations and minimizes the overhead typically associated with non-adjacent qubit interactions.
 
 <p align="center">
-<img src="./fig_md/gate_stepover.svg" width="400" />
+<img src="./fig_md/gate_stepover.svg" width="500" />
 </p>
 
 And the entanglement are naturally to be spread between qubits with following operations.
 
 # Inplementation of Quantum Noise
+
+<p align="center">
+<img src="./fig_md/Noises_in_circuit.svg" width="800" />
+</p>
 
 ## Unified Theoretical Noise Model
 
@@ -182,6 +186,18 @@ control of the superconducting qubits, two examples are shown in picture below,
 <img src="./fig_md/TrueError.svg" width="1600" />
 </p>
 
+### Get real noise with Quantum Process Tomography
+<p align="center">
+<img src="./fig_md/gettingRealNoise.jpg" width="495" />
+</p>
+
+Experimental quantum circuit. (a) Illustration depicting a quantum gate operation, where unaccounted environmental
+noises are represented as a dark, nebulous cloud surrounding the gate. This emphasizes the ubiquitous presence of noise
+during gate execution, affecting the fidelity of the quantum operation. (b) The application of quantum process tomography
+to a noisy two-qubit gate, specifically highlighting the phenomenon of crosstalk. The crosstalk effect, depicted as an
+interaction with the nearest qubit, is crucial for understanding and characterizing the intricate noise dynamics in
+multiqubit systems. (c) Utilizing singular value decomposition to extract the dominant noise tensor from the gate tensor.
+
 ## Experimentation System
 
 You might be curious of the pulse-controlled quantum computing system, a sketch
@@ -191,39 +207,6 @@ is shown below,
 <img src="./fig_md/PulseControl.svg" width=1600" />
 </p>
 
-# Structure of the Project
-
-The project structure appears to be well-organized and modular. Below is a brief description of each component
-in the project:
-
-- `main`: This file serves as a test file for the project, ensuring that the environment is correctly set up.
-
-**Library**:
-
-- `QuantumGate`: This abstract class defines the interface for quantum gates, providing a blueprint for
-  implementing different types of quantum gates.
-
-- `AbstractCircuit`: AbstractCircuit is an abstract class that defines the interface for quantum circuits,
-  providing a blueprint for implementing different types of quantum circuits.
-- 
-- `QuantumCircuit`: TensorCircuit is a concrete class that implements the AbstractCircuit interface, providing
-  a blueprint for implementing different types of quantum circuits.
-
-- `chipInfo`: This module offers fundamental information about quantum chips, which is primarily used for
-  noise simulation in the context of quantum computation.
-
-- `NoiseChannel`: This module provides noise channels for the quantum circuit, allowing the simulation of
-  realistic quantum noise during computations.
-
-- `TNNOptimizer`: This class implements an optimizer for tensornetwork algorithms, likely aimed at optimizing
-  the contraction strategy to enhance computational efficiency.
-
-- `tools`: This module introduces a set of tools to facilitate various operations within the program or
-  interface with external programs for specific functionalities.
-
-Overall, this structure seems to adhere to good software engineering practices, promoting modularity and
-reusability of components, which can lead to a more maintainable and scalable project.
-
 # Tutorial
 
 [Basic API Tutorial](https://colab.research.google.com/drive/1Fp9DolkPT-P_Dkg_s9PLbTOKSq64EVSu)
@@ -231,7 +214,7 @@ reusability of components, which can lead to a more maintainable and scalable pr
 ## Initialize Program
 
 ```python
-from torch import complex64
+from torch import complex64, complex128
 import tensornetwork as tn
 import MPDOSimulator as Simulator
 
@@ -303,7 +286,7 @@ circuit.truncate()
 print(circuit)
 ```
 
-## An Initial Quantum State
+## Creat an Initial Quantum State
 
 ```python
 """
