@@ -190,7 +190,7 @@ class TensorCircuit(QuantumCircuit):
                     EdgeName2AxisName([_qNodes[_bit]])
 
     def _create_dmNodes(self, reduced_index: Optional[List] = None):
-        _state, _qubits_conj = tn.replicate_nodes(self.stateNodes), tn.replicate_nodes(self.stateNodes)
+        _state, _qubits_conj = tn.replicate_nodes(self._stateNodes), tn.replicate_nodes(self._stateNodes)
         for _qubit in _qubits_conj:  # make conj(), which is much faster than conjugate=True in replicate_nodes()
             _qubit.set_tensor(_qubit.tensor.conj())
 
@@ -203,7 +203,7 @@ class TensorCircuit(QuantumCircuit):
 
         for i in range(self.qnumber):
             if not self.ideal and f'I_{i}' in _state[i].axis_names:
-                tn.connect(_state[i][f'I_{i}'], _qubits_conj[i][f'I_{i}'])
+                _state[i][f'I_{i}'] ^ _qubits_conj[i][f'I_{i}']
 
         reduce_dmNodes(_state, _qubits_conj, reduced_index)
         return _state, _qubits_conj
@@ -229,7 +229,7 @@ class TensorCircuit(QuantumCircuit):
         if not self.ideal:
             raise ValueError('Noisy circuit cannot be represented by state vector efficiently.')
 
-        _state = tn.replicate_nodes(self.stateNodes)
+        _state = tn.replicate_nodes(self._stateNodes)
         _outOrder = [_state[i][f'physics_{i}'] for i in list(range(self.qnumber))]
         _vector = tn.contractors.auto(_state, output_edge_order=_outOrder).tensor.reshape((2 ** self.qnumber, 1))
         self._vector = _vector
@@ -258,8 +258,9 @@ class TensorCircuit(QuantumCircuit):
         self._dm = _dm
         return _dm
 
-    @staticmethod
-    def _conditional_sample(_history: List[int], _dmNodes: List[tn.AbstractNode],
+    def _conditional_sample(self,
+                            _history: List[int],
+                            _dmNodes: List[tn.AbstractNode],
                             _conj_dmNodes: List[tn.AbstractNode],
                             _idx: int, _ori_list: List[int],
                             _proj_0: tn.AbstractNode, _proj_1: tn.AbstractNode) -> int:
@@ -273,8 +274,10 @@ class TensorCircuit(QuantumCircuit):
                 for _his in _history
             ]
 
-            _dmNodes_intermediate = tn.replicate_nodes(_dmNodes)
-            _conj_dmNodes_intermediate = tn.replicate_nodes(_conj_dmNodes)
+            _nodes_intermediate = tn.replicate_nodes([*_dmNodes, *_conj_dmNodes])
+            _dmNodes_intermediate, _conj_dmNodes_intermediate = (
+                _nodes_intermediate[:self.qnumber], _nodes_intermediate[self.qnumber:]
+            )
             reduce_dmNodes(_dmNodes_intermediate, _conj_dmNodes_intermediate, reduced_index=_ignored_reduced)
 
             for _j, (_proj, _con_proj) in enumerate(_proj_s):
@@ -303,7 +306,6 @@ class TensorCircuit(QuantumCircuit):
         _dmNodes, _conj_dmNodes = self._create_dmNodes()
 
         _bitStrings = [[] for _ in range(shots)]
-
         for _i in tqdm(range(shots), desc="Processing Shots"):
             _choices = [-1] * self.qnumber
             for _j in range(self.qnumber):
@@ -311,7 +313,6 @@ class TensorCircuit(QuantumCircuit):
                     _choices[:_j], _dmNodes, _conj_dmNodes,
                     _idx=_j, _ori_list=_ori_list, _proj_0=_projection_0, _proj_1=_projection_1
                 )
-
             _bitStrings[_i] = _choices
 
         if sample_string:
