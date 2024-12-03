@@ -417,3 +417,25 @@ class QuantumCircuit(ABC, nn.Module):
         self._oqs_list.append(['None'])
         self.layers.add_module(f'Barrier-{self._sequenceT}', None)
         self._sequenceT += 1
+
+    def reset0(self, oqs: Union[List, int]):
+        if isinstance(oqs, int):
+            oqs = [oqs]
+
+        _projector0 = tensor([[1, 0], [0, 0]], dtype=self.dtype, device=self.device)
+
+        from .QuantumGates.SingleGates import ArbSingleGate
+        _headline = f"Reset0{oqs}|None"
+
+        self._add_module(ArbSingleGate(_projector0, dtype=self.dtype, device=self.device), oqs, _headline)
+
+    def reset1(self, oqs: Union[List, int]):
+        if isinstance(oqs, int):
+            oqs = [oqs]
+
+        _projector1 = tensor([[0, 0], [0, 1]], dtype=self.dtype, device=self.device)
+
+        from .QuantumGates.SingleGates import ArbSingleGate
+        _headline = f"Reset1{oqs}|None"
+
+        self._add_module(ArbSingleGate(_projector1, dtype=self.dtype, device=self.device), oqs, _headline)

@@ -292,8 +292,10 @@ class TensorCircuit(QuantumCircuit):
                 ]
             ).tensor
         )
-
-        return tc.multinomial(_probs.real, num_samples=1).item()
+        try:
+            return tc.multinomial(_probs.real, num_samples=1).item()
+        except RuntimeError:
+            raise RuntimeError("State is illegal, all probs. are 0.")
 
     def fakeSample(self, shots: int = 1024, sample_string: bool = True):
         _projection_0 = tn.Node(
