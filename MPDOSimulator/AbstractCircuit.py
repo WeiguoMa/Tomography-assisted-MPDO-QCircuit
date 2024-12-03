@@ -422,20 +422,34 @@ class QuantumCircuit(ABC, nn.Module):
         if isinstance(oqs, int):
             oqs = [oqs]
 
-        _projector0 = tensor([[1, 0], [0, 0]], dtype=self.dtype, device=self.device)
+        from .QuantumGates.SingleGates import Reset0
+        _headline = f"Reset;0{oqs}|None"
 
-        from .QuantumGates.SingleGates import ArbSingleGate
-        _headline = f"Reset0{oqs}|None"
-
-        self._add_module(ArbSingleGate(_projector0, dtype=self.dtype, device=self.device), oqs, _headline)
+        self._add_module(Reset0(dtype=self.dtype, device=self.device), oqs, _headline)
 
     def reset1(self, oqs: Union[List, int]):
         if isinstance(oqs, int):
             oqs = [oqs]
 
-        _projector1 = tensor([[0, 0], [0, 1]], dtype=self.dtype, device=self.device)
+        from .QuantumGates.SingleGates import Reset1
+        _headline = f"Reset;1{oqs}|None"
 
-        from .QuantumGates.SingleGates import ArbSingleGate
-        _headline = f"Reset1{oqs}|None"
+        self._add_module(Reset1(dtype=self.dtype, device=self.device), oqs, _headline)
 
-        self._add_module(ArbSingleGate(_projector1, dtype=self.dtype, device=self.device), oqs, _headline)
+    def measure(self, oqs: Union[List, int], orientations: Optional[Union[List, int]] = None):
+        if orientations is None:
+            orientations = [2] * len(oqs)
+        if isinstance(oqs, int):
+            oqs = [oqs]
+        if isinstance(orientations, int):
+            orientations = [orientations]
+
+        from .QuantumGates.SingleGates import MeasureX, MeasureY, MeasureZ
+        _measure_map = {0: MeasureX, 1: MeasureY, 2: MeasureZ}
+
+        for oq, ori in zip(oqs, orientations):
+            if ori not in _measure_map:
+                raise ValueError("Orientation beyond the settings.")
+
+            _headline = f"Measure;{oq}|Orientation;{ori}"
+            self._add_module(_measure_map[ori](dtype=self.dtype, device=self.device), [oq], _headline)

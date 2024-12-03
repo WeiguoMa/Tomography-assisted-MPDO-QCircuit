@@ -3,6 +3,8 @@ Author: weiguo_ma
 Time: 04.27.2023
 Contact: weiguo.m@iphy.ac.cn
 """
+
+
 class ChipInformation:
     def __init__(self, query_time: str = None):
         self.queryTime = query_time

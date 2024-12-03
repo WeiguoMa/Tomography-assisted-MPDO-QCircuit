@@ -86,8 +86,11 @@ class TensorCircuit(QuantumCircuit):
         _qubits = [_qubit[f'physics_{_idx}'] for _idx, _qubit in enumerate(_qubits)]
         gate = self.layers[_layer_num]
 
+        if gate.name == 'MeasureZ':
+            return None  # Lazy Code
         if not gate:  # Stopping condition
             return None
+
         _maxIdx, _minIdx = max(_oqs), min(_oqs)
 
         if not isinstance(_qubits, List):
