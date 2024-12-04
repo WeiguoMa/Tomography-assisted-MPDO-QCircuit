@@ -350,17 +350,20 @@ class TensorCircuit(QuantumCircuit):
 
         return self._samples, self._counts
 
-    def randomSample(self, measurement_schemes: List[List[int]], shots_per_scheme: int = 1024) -> List[List[List[int]]]:
+    def randomSample(self,
+                     measurement_schemes: List[List[int]],
+                     shots_per_scheme: int = 1024, reduced: Optional[List[int]] = None) -> List[List[List[int]]]:
         """
         Args:
-            measurement_schemes: __len__ == M.
-            shots_per_scheme: K
+            measurement_schemes: __len__ == M;
+            shots_per_scheme: K;
+            reduced: Reduced subsystem.
 
         Returns:
             Measurement results.
         """
         _measurement_outcomes = [
-            self.fakeSample(shots=shots_per_scheme, orientation=_scheme, sample_string=False, _tqdm_disable=True)[0]
+            self.fakeSample(shots=shots_per_scheme, orientation=_scheme, reduced=reduced, sample_string=False, _tqdm_disable=True)[0]
             for _scheme in tqdm(measurement_schemes, desc=f"Random Sampling")
         ]
 
