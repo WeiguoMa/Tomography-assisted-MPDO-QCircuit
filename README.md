@@ -350,6 +350,11 @@ print(counts)
 # ]
 # print(Simulator.dmOperations.expect(dmNodes, obs, oqs=[[0, 1], [0, 1], [0, 1], [0, 1]]))
 
+# Function 7: Pauli Measurement:
+    # I provide two methods of Pauli measurements:
+    # 1. circuit.measure(oqs, orientation) -> This call() could show density matrix and dmNodes and samples.
+    # 2. circuit.fakeSample(shots, orientation) -> This call() show only samples.
+
 # To reuse all the property in Nodes,
 # I recommend you to use tensornetwork.replicate_nodes() for keeping the original nodes, which are in memory, unchanged.
 ```

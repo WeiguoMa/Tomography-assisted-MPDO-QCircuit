@@ -77,6 +77,20 @@ print(counts)
     # After the calculation, you could call circuit.vector to get this property.
 # vector = circuit.cal_vector()
 
+# Function 6: Calculate the expectation values with density matrix nodes (tensor network without contraction):
+# obs = [
+#     kron(tensor([[0, 1], [1, 0]], dtype=DTYPE, device=DEVICE), tensor([[0, 1], [1, 0]], dtype=DTYPE, device=DEVICE)),
+#     kron(tensor([[0, -1j], [1j, 0]], dtype=DTYPE, device=DEVICE), tensor([[0, -1j], [1j, 0]], dtype=DTYPE, device=DEVICE)),
+#     kron(tensor([[1, 0], [0, -1]], dtype=DTYPE, device=DEVICE), tensor([[1, 0], [0, -1]], dtype=DTYPE, device=DEVICE)),
+#     1 / 2 * kron(tensor([[1, 1], [1, -1]], dtype=DTYPE, device=DEVICE), tensor([[1, 1], [1, -1]], dtype=DTYPE, device=DEVICE)),
+# ]
+# print(Simulator.dmOperations.expect(dmNodes, obs, oqs=[[0, 1], [0, 1], [0, 1], [0, 1]]))
+
+# Function 7: Pauli Measurement:
+    # I provide two methods of Pauli measurements:
+    # 1. circuit.measure(oqs, orientation) -> This call() could show density matrix and dmNodes and samples.
+    # 2. circuit.fakeSample(shots, orientation) -> This call() show only samples.
+
 
 # To reuse all the property in Nodes,
 # I recommend you to use tensornetwork.replicate_nodes() for keeping the original nodes, which are in memory, unchanged.
