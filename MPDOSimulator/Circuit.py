@@ -3,7 +3,6 @@ Author: weiguo_ma
 Time: 11.23.2024
 Contact: weiguo.m@iphy.ac.cn
 """
-from multiprocessing.managers import Value
 from typing import Optional, Dict, Union, List, Any, Tuple
 
 import tensornetwork as tn
@@ -309,7 +308,8 @@ class TensorCircuit(QuantumCircuit):
     def fakeSample(self,
                    shots: Optional[int] = None,
                    orientation: Optional[List[int]] = None,
-                   reduced: Optional[List[int]] = None, sample_string: bool = True) -> Tuple[List[List[int]], Dict]:
+                   reduced: Optional[List[int]] = None,
+                   sample_string: bool = True, _tqdm_disable: bool = False) -> Tuple[List[List[int]], Dict]:
         shots = 1024 if shots is None else shots
 
         reduced = [] if reduced is None else reduced
@@ -331,7 +331,8 @@ class TensorCircuit(QuantumCircuit):
         _bitStrings = [[] for _ in range(shots)]
         for _i in tqdm(
                 range(shots),
-                desc=f"Processing Shots for scheme - {''.join([self._projectors_string[num] for num in orientation])}"
+                desc=f"Processing Shots for scheme - {''.join([self._projectors_string[num] for num in orientation])}",
+                disable=_tqdm_disable
         ):
             _choices = [-1] * _sampleLength
             for _j in range(_sampleLength):     # _j: index in un-reduced dmNodes.
@@ -359,8 +360,8 @@ class TensorCircuit(QuantumCircuit):
             Measurement results.
         """
         _measurement_outcomes = [
-            self.fakeSample(shots=shots_per_scheme, orientation=_scheme, sample_string=False)[0]
-            for _scheme in measurement_schemes
+            self.fakeSample(shots=shots_per_scheme, orientation=_scheme, sample_string=False, _tqdm_disable=True)[0]
+            for _scheme in tqdm(measurement_schemes, desc=f"Random Sampling")
         ]
 
         return _measurement_outcomes
