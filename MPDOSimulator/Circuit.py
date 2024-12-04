@@ -3,7 +3,7 @@ Author: weiguo_ma
 Time: 11.23.2024
 Contact: weiguo.m@iphy.ac.cn
 """
-from typing import Optional, Dict, Union, List, Any
+from typing import Optional, Dict, Union, List, Any, Tuple
 
 import tensornetwork as tn
 import torch as tc
@@ -265,16 +265,21 @@ class TensorCircuit(QuantumCircuit):
                             _history: List[int],
                             _dmNodes: List[tn.AbstractNode],
                             _conj_dmNodes: List[tn.AbstractNode],
-                            _idx: int, _ori_list: List[int],
-                            _proj_0: tn.AbstractNode, _proj_1: tn.AbstractNode) -> int:
+                            _idx: int, _ori_list: List[int], _orientations: List[int]) -> int:
         _proj_reduced, _ignored_reduced = _ori_list[:_idx], _ori_list[_idx + 1:]
 
         _contract_nodes = []
         with tn.NodeCollection(_contract_nodes):
             _proj_s = [
-                (tn.replicate_nodes([_proj_0])[0], tn.replicate_nodes([_proj_0])[0])
-                if _his == 0 else (tn.replicate_nodes([_proj_1])[0], tn.replicate_nodes([_proj_1])[0])
-                for _his in _history
+                (
+                    tn.replicate_nodes([self._projectors[_orientations[_hisIdx]][0]])[0],
+                    tn.replicate_nodes([self._projectors[_orientations[_hisIdx]][0]])[0]
+                )
+                if _his == 0 else (
+                    tn.replicate_nodes([self._projectors[_orientations[_hisIdx]][1]])[0],
+                    tn.replicate_nodes([self._projectors[_orientations[_hisIdx]][1]])[0]
+                )
+                for _hisIdx, _his in enumerate(_history)
             ]
 
             _nodes_intermediate = tn.replicate_nodes([*_dmNodes, *_conj_dmNodes])
@@ -300,23 +305,29 @@ class TensorCircuit(QuantumCircuit):
         except RuntimeError:
             raise RuntimeError("State is illegal, all probs. are 0.")
 
-    def fakeSample(self, shots: int = 1024, sample_string: bool = True):
-        _projection_0 = tn.Node(
-            tc.tensor([1, 0], dtype=self.dtype, device=self.device), axis_names=['proj'], name='proj_0'
-        )
-        _projection_1 = tn.Node(
-            tc.tensor([0, 1], dtype=self.dtype, device=self.device), axis_names=['proj'], name='proj_1'
-        )
+    def fakeSample(self,
+                   shots: Optional[int] = None,
+                   orientation: Optional[List[int]] = None, sample_string: bool = True) -> Tuple[List[List[int]], Dict]:
+        if shots is None:
+            shots = 1024
+        if orientation is None:
+            orientation = [2] * self.qnumber
+
+        self._load_projectors()  # Load projectors in memory.
+
         _ori_list = [num for num in range(self.qnumber)]
         _dmNodes, _conj_dmNodes = self._create_dmNodes()
 
         _bitStrings = [[] for _ in range(shots)]
-        for _i in tqdm(range(shots), desc="Processing Shots"):
+        for _i in tqdm(
+                range(shots),
+                desc=f"Processing Shots for scheme - {''.join([self._projectors_string[num] for num in orientation])}"
+        ):
             _choices = [-1] * self.qnumber
             for _j in range(self.qnumber):
                 _choices[_j] = self._conditional_sample(
                     _choices[:_j], _dmNodes, _conj_dmNodes,
-                    _idx=_j, _ori_list=_ori_list, _proj_0=_projection_0, _proj_1=_projection_1
+                    _idx=_j, _ori_list=_ori_list, _orientations=orientation
                 )
             _bitStrings[_i] = _choices
 
@@ -327,6 +338,22 @@ class TensorCircuit(QuantumCircuit):
         self._counts = count_item(_bitStrings)
 
         return self._samples, self._counts
+
+    def randomSample(self, measurement_schemes: List[List[int]], shots_per_scheme: int = 1024) -> List[List[List[int]]]:
+        """
+        Args:
+            measurement_schemes: __len__ == M.
+            shots_per_scheme: K
+
+        Returns:
+            Measurement results.
+        """
+        _measurement_outcomes = [
+            self.fakeSample(shots=shots_per_scheme, orientation=_scheme, sample_string=False)[0]
+            for _scheme in measurement_schemes
+        ]
+
+        return _measurement_outcomes
 
     def evolve(self, state: List[tn.AbstractNode]):
         self._initState = tn.replicate_nodes(state)
