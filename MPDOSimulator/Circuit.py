@@ -3,6 +3,7 @@ Author: weiguo_ma
 Time: 11.23.2024
 Contact: weiguo.m@iphy.ac.cn
 """
+from multiprocessing.managers import Value
 from typing import Optional, Dict, Union, List, Any, Tuple
 
 import tensornetwork as tn
@@ -266,7 +267,7 @@ class TensorCircuit(QuantumCircuit):
                             _dmNodes: List[tn.AbstractNode],
                             _conj_dmNodes: List[tn.AbstractNode],
                             _idx: int, _ori_list: List[int], _orientations: List[int]) -> int:
-        _proj_reduced, _ignored_reduced = _ori_list[:_idx], _ori_list[_idx + 1:]
+        _ignored_reduced = _ori_list[_idx + 1:]
 
         _contract_nodes = []
         with tn.NodeCollection(_contract_nodes):
@@ -289,14 +290,14 @@ class TensorCircuit(QuantumCircuit):
             reduce_dmNodes(_dmNodes_intermediate, _conj_dmNodes_intermediate, reduced_index=_ignored_reduced)
 
             for _j, (_proj, _con_proj) in enumerate(_proj_s):
-                _proj['proj'] ^ _dmNodes_intermediate[_j][f'physics_{_j}']
-                _con_proj['proj'] ^ _conj_dmNodes_intermediate[_j][f'con_physics_{_j}']
+                _proj['proj'] ^ _dmNodes_intermediate[_ori_list[_j]][f'physics_{_ori_list[_j]}']
+                _con_proj['proj'] ^ _conj_dmNodes_intermediate[_ori_list[_j]][f'con_physics_{_ori_list[_j]}']
 
         _probs = tc.diag(
             tn.contractors.auto(
                 _contract_nodes, output_edge_order=[
-                    _dmNodes_intermediate[_idx][f'physics_{_idx}'],
-                    _conj_dmNodes_intermediate[_idx][f'con_physics_{_idx}']
+                    _dmNodes_intermediate[_ori_list[_idx]][f'physics_{_ori_list[_idx]}'],
+                    _conj_dmNodes_intermediate[_ori_list[_idx]][f'con_physics_{_ori_list[_idx]}']
                 ]
             ).tensor
         )
@@ -307,24 +308,33 @@ class TensorCircuit(QuantumCircuit):
 
     def fakeSample(self,
                    shots: Optional[int] = None,
-                   orientation: Optional[List[int]] = None, sample_string: bool = True) -> Tuple[List[List[int]], Dict]:
-        if shots is None:
-            shots = 1024
-        if orientation is None:
-            orientation = [2] * self.qnumber
+                   orientation: Optional[List[int]] = None,
+                   reduced: Optional[List[int]] = None, sample_string: bool = True) -> Tuple[List[List[int]], Dict]:
+        shots = 1024 if shots is None else shots
+
+        reduced = [] if reduced is None else reduced
+        _ori_list = [num for num in range(self.qnumber) if num not in reduced]
+        _sampleLength = len(_ori_list)
+
+        orientation = [2] * _sampleLength if orientation is None else orientation
+        if len(orientation) != _sampleLength:
+            raise ValueError(
+                "Length of orientation must be equal to sample length. "
+                "You are probably sampling from a reduced qubit, or providing insufficient orientations."
+            )
 
         self._load_projectors()  # Load projectors in memory.
 
-        _ori_list = [num for num in range(self.qnumber)]
         _dmNodes, _conj_dmNodes = self._create_dmNodes()
+        reduce_dmNodes(_dmNodes, _conj_dmNodes, reduced_index=reduced)
 
         _bitStrings = [[] for _ in range(shots)]
         for _i in tqdm(
                 range(shots),
                 desc=f"Processing Shots for scheme - {''.join([self._projectors_string[num] for num in orientation])}"
         ):
-            _choices = [-1] * self.qnumber
-            for _j in range(self.qnumber):
+            _choices = [-1] * _sampleLength
+            for _j in range(_sampleLength):     # _j: index in un-reduced dmNodes.
                 _choices[_j] = self._conditional_sample(
                     _choices[:_j], _dmNodes, _conj_dmNodes,
                     _idx=_j, _ori_list=_ori_list, _orientations=orientation

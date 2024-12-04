@@ -89,7 +89,7 @@ print(counts)
 # Function 7: Pauli Measurement:
     # I provide two methods of Pauli measurements:
     # 1. circuit.measure(oqs, orientation) -> This call() could show density matrix and dmNodes and samples.
-    # 2. circuit.fakeSample(shots, orientation) -> This call() show only samples.
+    # 2. circuit.fakeSample(shots, orientation, reduced) -> This call() show only samples. reduced: allow to sample from reduced system.
 
 
 # To reuse all the property in Nodes,
