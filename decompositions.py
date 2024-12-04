@@ -26,11 +26,12 @@ def _randomized_svd(torch: Any, M, n_components: int, n_overSamples: int = 5,
     Randomized SVD for complex-number matrix.
     """
     _m, _n = M.shape
-    _rng = torch.Generator()
+    _device = M.device
+    _rng = torch.Generator(device=_device)
     if random_state is not None:
         _rng.manual_seed(random_state)
 
-    _Q = torch.randn(_m, n_components + n_overSamples, dtype=M.dtype, generator=_rng)
+    _Q = torch.randn(_m, n_components + n_overSamples, dtype=M.dtype, generator=_rng, device=M.device)
 
     if n_iter == 'auto':
         n_iter = 6 if _m >= _n else 4
