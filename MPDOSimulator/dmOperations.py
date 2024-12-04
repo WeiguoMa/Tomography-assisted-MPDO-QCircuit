@@ -96,12 +96,14 @@ def trace_composited_rho2(*dmNodes: List[tn.AbstractNode]) -> Tensor:
     """
     _sliceNum = len(dmNodes)
 
-    _sum = 0
-    for _i in range(_sliceNum):
-        for _j in range(_sliceNum):
-            _sum += trace_rho_rho(dmNodes[_i], dmNodes[_j])
+    # Diag
+    _sum_diag = sum([trace_rho2(dmNodes[_i]) for _i in range(_sliceNum)])
+    # Cross
+    _sum_cross = sum(
+        [trace_rho_rho(dmNodes[_i], dmNodes[_j]) for _i in range(_sliceNum) for _j in range(_i + 1, _sliceNum)]
+    )
 
-    return _sum / (_sliceNum ** 2)
+    return (_sum_diag + 2 * _sum_cross) / (_sliceNum ** 2)
 
 
 def expect(dmNodes: List[tn.AbstractNode],
