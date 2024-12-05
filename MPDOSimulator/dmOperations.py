@@ -6,7 +6,7 @@ Contact: weiguo.m@iphy.ac.cn
 from typing import Optional, List, Union
 
 import tensornetwork as tn
-from torch import Tensor
+from torch import Tensor, trace, matmul
 
 
 def reduce_dmNodes(qubits_nodes: List[tn.AbstractNode],
@@ -95,6 +95,23 @@ def trace_composited_rho2(*dmNodes: List[tn.AbstractNode]) -> Tensor:
         Trace value in float.
     """
     _sliceNum = len(dmNodes)
+
+    # For small matrix, there is no need to waste time calculate the cross item with TNN framework.
+        # This is the trade of between Time and Memory.
+    subStatus = [dmNodes[0][i][f'physics_{i}'].is_dangling() for i in range(len(dmNodes[0]) // 2)]
+    subSize, qnumber = sum(subStatus), len(subStatus)
+
+    if subSize <= 12:
+        _rho = Tensor(0)
+        for _dmNode in dmNodes:
+            out_order = ([_dmNode[i][f'physics_{i}'] for i in range(qnumber) if subStatus[i]] +
+                         [_dmNode[i+qnumber][f'con_physics_{i}'] for i in range(qnumber) if subStatus[i]])
+            try:
+                _rho += tn.contractors.auto(_dmNode, output_edge_order=out_order).tensor.reshape(2 ** subSize, 2 ** subSize)
+            except ValueError:
+                raise ValueError('Density matrices should have same number of un-traced nodes.')
+
+        return trace(matmul(_rho, _rho)).real / (_sliceNum ** 2)
 
     # Diag
     _sum_diag = sum([trace_rho2(dmNodes[_i]) for _i in range(_sliceNum)])
