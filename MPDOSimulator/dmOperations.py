@@ -6,7 +6,7 @@ Contact: weiguo.m@iphy.ac.cn
 from typing import Optional, List, Union
 
 import tensornetwork as tn
-from torch import Tensor, trace, matmul
+from torch import Tensor, trace, matmul, zeros
 
 
 def reduce_dmNodes(qubits_nodes: List[tn.AbstractNode],
@@ -102,12 +102,12 @@ def trace_composited_rho2(*dmNodes: List[tn.AbstractNode]) -> Tensor:
     subSize, qnumber = sum(subStatus), len(subStatus)
 
     if subSize <= 12:
-        _rho = Tensor(0)
+        _rho = zeros(size=(2 ** subSize, 2 ** subSize), dtype=dmNodes[0][0].tensor.dtype, device=dmNodes[0][0].tensor.device)
         for _dmNode in dmNodes:
             out_order = ([_dmNode[i][f'physics_{i}'] for i in range(qnumber) if subStatus[i]] +
                          [_dmNode[i+qnumber][f'con_physics_{i}'] for i in range(qnumber) if subStatus[i]])
             try:
-                _rho += tn.contractors.auto(_dmNode, output_edge_order=out_order).tensor.reshape(2 ** subSize, 2 ** subSize)
+                _rho += tn.contractors.auto(_dmNode, output_edge_order=out_order).tensor.reshape(_rho.shape)
             except ValueError:
                 raise ValueError('Density matrices should have same number of un-traced nodes.')
 
