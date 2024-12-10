@@ -68,26 +68,39 @@ class QuantumCircuit(ABC, nn.Module):
         _coefficient = 1 / sqrt(tensor(2, dtype=self.dtype, device=self.device))
 
         self._projectors_string = ['X', 'Y', 'Z']
+        self._projectors = {
+            0: [Node(
+                tensor([1, 0], dtype=self.dtype, device=self.device), axis_names=['proj'], name='proj_2_0'
+            )
+                for _ in range(2)],
+            1: [Node(
+                tensor([0, 1], dtype=self.dtype, device=self.device), axis_names=['proj'], name='proj_2_1'
+            )
+                for _ in range(2)]
+        }
 
-        self._projectors: List[List] = [[None, None]] * 3
-        self._projectors[0][0] = Node(
-            _coefficient * tensor([1, 1], dtype=self.dtype, device=self.device), axis_names=['proj'], name='proj_0_0'
-        )
-        self._projectors[0][1] = Node(
-            _coefficient * tensor([1, -1], dtype=self.dtype, device=self.device), axis_names=['proj'], name='proj_0_1'
-        )
-        self._projectors[1][0] = Node(
-            _coefficient * tensor([1, 1j], dtype=self.dtype, device=self.device), axis_names=['proj'], name='proj_1_0'
-        )
-        self._projectors[1][1] = Node(
-            _coefficient * tensor([1, -1j], dtype=self.dtype, device=self.device), axis_names=['proj'], name='proj_1_1'
-        )
-        self._projectors[2][0] = Node(
-            tensor([1, 0], dtype=self.dtype, device=self.device), axis_names=['proj'], name='proj_2_0'
-        )
-        self._projectors[2][1] = Node(
-            tensor([0, 1], dtype=self.dtype, device=self.device), axis_names=['proj'], name='proj_2_1'
-        )
+        self._projectorXY_map = {
+            0: [
+                Node(
+                    _coefficient * tensor([[1, 1], [1, -1]], dtype=self.dtype, device=self.device),
+                    axis_names=['physics', 'inner'], name='proj_X'
+                ),
+                Node(
+                    _coefficient * tensor([[1, 1], [1, -1]], dtype=self.dtype, device=self.device).conj(),
+                    axis_names=['physics', 'inner'], name='proj_X'
+                )
+            ],
+            1: [
+                Node(
+                    _coefficient * tensor([[1, 1], [-1j, 1j]], dtype=self.dtype, device=self.device),
+                    axis_names=['physics', 'inner'], name='proj_Y'
+                ),
+                Node(
+                    _coefficient * tensor([[1, 1], [-1j, 1j]], dtype=self.dtype, device=self.device).conj(),
+                    axis_names=['physics', 'inner'], name='proj_Y'
+                )
+            ]
+        }
 
     @property
     def dm(self):

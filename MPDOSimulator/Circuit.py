@@ -7,14 +7,20 @@ from typing import Optional, Dict, Union, List, Any, Tuple
 
 import tensornetwork as tn
 import torch as tc
+from tensornetwork import AbstractNode
+from torch.linalg import LinAlgError
 from tqdm import tqdm
 
 from .AbstractCircuit import QuantumCircuit
 from .NoiseChannel import NoiseChannel
 from .QuantumGates.AbstractGate import QuantumGate
+from .QuantumGates.SingleGates import MeasureX, MeasureY
 from .TNNOptimizer import bondTruncate, svdKappa_left2right, checkConnectivity
 from .Tools import EdgeName2AxisName, count_item
 from .dmOperations import reduce_dmNodes
+
+GLOBAL_MINIMUM = 1e-15
+MAX_ATTEMPTS = 4
 
 
 class TensorCircuit(QuantumCircuit):
@@ -72,19 +78,14 @@ class TensorCircuit(QuantumCircuit):
                 _rEdges.append(contracted_node[_axis])
         return _lEdges, _rEdges
 
-    def _add_gate(self, _qubits: List[tn.AbstractNode], _layer_num: int, _oqs: List[int]):
-        r"""
-        Add quantum Gate to tensornetwork
-
-        Args:
-            _oqs: operating qubits.
-
-        Returns:
-            Tensornetwork after adding gate.
+    def _add_gate(self, _qubits: List[tn.AbstractNode],  _layer_num: int, _oqs: List[int], _gate: Optional = None):
+        """
+        Add quantum Gate.
         """
         _qNodes = _qubits
         _qubits = [_qubit[f'physics_{_idx}'] for _idx, _qubit in enumerate(_qubits)]
-        gate = self.layers[_layer_num]
+
+        gate = self.layers[_layer_num] if _gate is None else _gate
 
         if not gate:  # Stopping condition
             return None
@@ -96,7 +97,7 @@ class TensorCircuit(QuantumCircuit):
         if not isinstance(_qubits, List):
             raise TypeError('Qubit must be a list of nodes.')
         if not isinstance(gate, QuantumGate):
-            raise TypeError(f'Gate must be a TensorGate, current type is {type(gate)}.')
+            raise TypeError(f'Gate must be a QuantumGate, current type is {type(gate)}.')
         if not isinstance(_oqs, List):
             raise TypeError('Operating qubits must be a list.')
         if _maxIdx >= self.qnumber:
@@ -149,12 +150,26 @@ class TensorCircuit(QuantumCircuit):
                 EdgeName2AxisName([_contracted_node])
 
             _lEdges, _rEdges = self._assignEdges(_contracted_node, _minIdx)
-            _qNodes[_minIdx], _qNodes[_maxIdx], _ = tn.split_node(
-                _contracted_node, left_edges=_lEdges, right_edges=_rEdges,
-                left_name=_qNodes[_minIdx].name, right_name=_qNodes[_maxIdx].name,
-                edge_name=f'bond_{_minIdx}_{_maxIdx}'
-            )
-            EdgeName2AxisName([_qNodes[_minIdx], _qNodes[_maxIdx]])
+
+            for attempt in range(MAX_ATTEMPTS):
+                try:
+                    _qNodes[_minIdx], _qNodes[_maxIdx], _ = tn.split_node(
+                        _contracted_node, left_edges=_lEdges, right_edges=_rEdges,
+                        left_name=_qNodes[_minIdx].name, right_name=_qNodes[_maxIdx].name,
+                        edge_name=f'bond_{_minIdx}_{_maxIdx}'
+                    )
+                    EdgeName2AxisName([_qNodes[_minIdx], _qNodes[_maxIdx]])
+                    break
+                except LinAlgError:
+                    _tensor_norm = tc.norm(_contracted_node.tensor).item()
+                    _scale_factor = 1e-10
+                    _perturbation_magnitude = tc.finfo(tc.float64).eps * max(_tensor_norm, 1.0) * _scale_factor
+                    _perturbation = _perturbation_magnitude * (
+                            tc.randn_like(_contracted_node.tensor) + 1j * tc.randn_like(_contracted_node.tensor)
+                    )
+                    _contracted_node.set_tensor(_contracted_node.tensor + _perturbation)
+            else:
+                raise LinAlgError(f'SVD converges failed. Multiple times ({MAX_ATTEMPTS}) of perturbation are tried.')
 
         else:
             """
@@ -192,8 +207,10 @@ class TensorCircuit(QuantumCircuit):
                     )
                     EdgeName2AxisName([_qNodes[_bit]])
 
-    def _create_dmNodes(self, reduced_index: Optional[List] = None):
-        _state, _qubits_conj = tn.replicate_nodes(self._stateNodes), tn.replicate_nodes(self._stateNodes)
+    def _create_dmNodes(self, _stateNodes: Optional[List[AbstractNode]] = None, reduced_index: Optional[List] = None):
+        _state = tn.replicate_nodes(_stateNodes) if _stateNodes is not None else tn.replicate_nodes(self._stateNodes)
+        _qubits_conj = tn.replicate_nodes(_stateNodes) if _stateNodes is not None else tn.replicate_nodes(
+            self._stateNodes)
         for _qubit in _qubits_conj:  # make conj(), which is much faster than conjugate=True in replicate_nodes()
             _qubit.set_tensor(_qubit.tensor.conj())
 
@@ -242,7 +259,7 @@ class TensorCircuit(QuantumCircuit):
         if reduced_index is None:
             reduced_index = []
 
-        _state, _qubits_conj = self._create_dmNodes(reduced_index)
+        _state, _qubits_conj = self._create_dmNodes(reduced_index=reduced_index)
         self._dmNodes = _state + _qubits_conj
         return self._dmNodes
 
@@ -266,19 +283,13 @@ class TensorCircuit(QuantumCircuit):
                             _dmNodes: List[tn.AbstractNode],
                             _conj_dmNodes: List[tn.AbstractNode],
                             _idx: int, _ori_list: List[int], _orientations: List[int]) -> int:
+        _qLoc = _ori_list[_idx]
         _ignored_reduced = _ori_list[_idx + 1:]
 
         _contract_nodes = []
         with tn.NodeCollection(_contract_nodes):
             _proj_s = [
-                (
-                    tn.replicate_nodes([self._projectors[_orientations[_hisIdx]][0]])[0],
-                    tn.replicate_nodes([self._projectors[_orientations[_hisIdx]][0]])[0]
-                )
-                if _his == 0 else (
-                    tn.replicate_nodes([self._projectors[_orientations[_hisIdx]][1]])[0],
-                    tn.replicate_nodes([self._projectors[_orientations[_hisIdx]][1]])[0]
-                )
+                tn.replicate_nodes(self._projectors[0]) if _his == 0 else tn.replicate_nodes(self._projectors[1])
                 for _hisIdx, _his in enumerate(_history)
             ]
 
@@ -293,17 +304,16 @@ class TensorCircuit(QuantumCircuit):
                 _con_proj['proj'] ^ _conj_dmNodes_intermediate[_ori_list[_j]][f'con_physics_{_ori_list[_j]}']
 
         _probs = tc.diag(
-            tn.contractors.auto(
-                _contract_nodes, output_edge_order=[
-                    _dmNodes_intermediate[_ori_list[_idx]][f'physics_{_ori_list[_idx]}'],
-                    _conj_dmNodes_intermediate[_ori_list[_idx]][f'con_physics_{_ori_list[_idx]}']
-                ]
-            ).tensor
+            tn.contractors.auto(_contract_nodes, output_edge_order=[
+                _dmNodes_intermediate[_qLoc][f'physics_{_qLoc}'],
+                _conj_dmNodes_intermediate[_qLoc][f'con_physics_{_qLoc}']
+            ]).tensor
         )
+
         try:
-            return tc.multinomial(_probs.real, num_samples=1).item()
+            return tc.multinomial(_probs.real + GLOBAL_MINIMUM, num_samples=1).item()
         except RuntimeError:
-            raise RuntimeError("State is illegal, all probs. are 0.")
+            raise RuntimeError(f"State is illegal, all probs. are 0. Yours are {_probs.real}.")
 
     def fakeSample(self,
                    shots: Optional[int] = None,
@@ -316,6 +326,7 @@ class TensorCircuit(QuantumCircuit):
         _ori_list = [num for num in range(self.qnumber) if num not in reduced]
         _sampleLength = len(_ori_list)
 
+        self._load_projectors()  # Load projectors in memory.
         orientation = [2] * _sampleLength if orientation is None else orientation
         if len(orientation) != _sampleLength:
             raise ValueError(
@@ -323,9 +334,16 @@ class TensorCircuit(QuantumCircuit):
                 "You are probably sampling from a reduced qubit, or providing insufficient orientations."
             )
 
-        self._load_projectors()  # Load projectors in memory.
+        _nodes4samples = tn.replicate_nodes(self._stateNodes)
 
-        _dmNodes, _conj_dmNodes = self._create_dmNodes()
+        _ori_0 = [i for i, value in enumerate(orientation) if value == 0]
+        _ori_1 = [i for i, value in enumerate(orientation) if value == 1]
+        if _ori_0:
+            self._add_gate(_nodes4samples, 0, _ori_0, MeasureX(dtype=self.dtype, device=self.device))
+        if _ori_1:
+            self._add_gate(_nodes4samples, 0, _ori_1, MeasureY(dtype=self.dtype, device=self.device))
+
+        _dmNodes, _conj_dmNodes = self._create_dmNodes(_nodes4samples)
         reduce_dmNodes(_dmNodes, _conj_dmNodes, reduced_index=reduced)
 
         _bitStrings = [[] for _ in range(shots)]
@@ -335,7 +353,7 @@ class TensorCircuit(QuantumCircuit):
                 disable=_tqdm_disable
         ):
             _choices = [-1] * _sampleLength
-            for _j in range(_sampleLength):     # _j: index in un-reduced dmNodes.
+            for _j in range(_sampleLength):  # _j: index in un-reduced dmNodes.
                 _choices[_j] = self._conditional_sample(
                     _choices[:_j], _dmNodes, _conj_dmNodes,
                     _idx=_j, _ori_list=_ori_list, _orientations=orientation
@@ -364,7 +382,9 @@ class TensorCircuit(QuantumCircuit):
             Measurement results.
         """
         _measurement_outcomes = [
-            self.fakeSample(shots=shots_per_scheme, orientation=_scheme, reduced=reduced, sample_string=False, _tqdm_disable=True)[0]
+            self.fakeSample(
+                shots=shots_per_scheme, orientation=_scheme, reduced=reduced, sample_string=False, _tqdm_disable=True
+            )[0]
             for _scheme in tqdm(measurement_schemes, desc=f"Random Sampling", disable=_tqdm_disable)
         ]
 

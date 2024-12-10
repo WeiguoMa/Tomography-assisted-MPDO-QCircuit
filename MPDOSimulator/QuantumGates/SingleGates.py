@@ -243,7 +243,7 @@ class MeasureX(QuantumGate):
     """
 
     def __init__(self, dtype=complex64, device: Union[str, int] = 'cpu'):
-        super(MeasureX, self).__init__(dtype=dtype, device=device)
+        super(MeasureX, self).__init__(ideal=True, dtype=dtype, device=device)
         _coefficient = 1 / sqrt(torch_tensor(2, dtype=self.dtype, device=self.device))
         self._matrix = torch_tensor([[1, 1], [1, -1]], dtype=self.dtype, device=self.device) * _coefficient
 
@@ -278,9 +278,9 @@ class MeasureY(QuantumGate):
     """
 
     def __init__(self, dtype=complex64, device: Union[str, int] = 'cpu'):
-        super(MeasureY, self).__init__(dtype=dtype, device=device)
+        super(MeasureY, self).__init__(ideal=True, dtype=dtype, device=device)
         _coefficient = 1 / sqrt(torch_tensor(2, dtype=self.dtype, device=self.device))
-        self._matrix = torch_tensor([[1, 1], [-1j, 1j]], dtype=self.dtype, device=self.device) * _coefficient
+        self._matrix = torch_tensor([[1, -1j], [1, 1j]], dtype=self.dtype, device=self.device) * _coefficient
 
     @property
     def name(self):
@@ -313,7 +313,7 @@ class MeasureZ(QuantumGate):
     """
 
     def __init__(self, dtype=complex64, device: Union[str, int] = 'cpu'):
-        super(MeasureZ, self).__init__(dtype=dtype, device=device)
+        super(MeasureZ, self).__init__(ideal=True, dtype=dtype, device=device)
         self._matrix = torch_tensor([[1, 0], [0, 1]], dtype=self.dtype, device=self.device)
 
     @property
@@ -347,7 +347,7 @@ class Reset0(QuantumGate):
     """
 
     def __init__(self, dtype=complex64, device: Union[str, int] = 'cpu'):
-        super(Reset0, self).__init__(dtype=dtype, device=device)
+        super(Reset0, self).__init__(ideal=True, dtype=dtype, device=device)
         self._matrix = torch_tensor([[1, 0], [0, 0]], dtype=self.dtype, device=self.device)
 
     @property
@@ -381,7 +381,7 @@ class Reset1(QuantumGate):
     """
 
     def __init__(self, dtype=complex64, device: Union[str, int] = 'cpu'):
-        super(Reset1, self).__init__(dtype=dtype, device=device)
+        super(Reset1, self).__init__(ideal=True, dtype=dtype, device=device)
         self._matrix = torch_tensor([[0, 0], [0, 1]], dtype=self.dtype, device=self.device)
 
     @property
