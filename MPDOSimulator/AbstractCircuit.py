@@ -79,29 +79,6 @@ class QuantumCircuit(ABC, nn.Module):
                 for _ in range(2)]
         }
 
-        self._projectorXY_map = {
-            0: [
-                Node(
-                    _coefficient * tensor([[1, 1], [1, -1]], dtype=self.dtype, device=self.device),
-                    axis_names=['physics', 'inner'], name='proj_X'
-                ),
-                Node(
-                    _coefficient * tensor([[1, 1], [1, -1]], dtype=self.dtype, device=self.device).conj(),
-                    axis_names=['physics', 'inner'], name='proj_X'
-                )
-            ],
-            1: [
-                Node(
-                    _coefficient * tensor([[1, 1], [-1j, 1j]], dtype=self.dtype, device=self.device),
-                    axis_names=['physics', 'inner'], name='proj_Y'
-                ),
-                Node(
-                    _coefficient * tensor([[1, 1], [-1j, 1j]], dtype=self.dtype, device=self.device).conj(),
-                    axis_names=['physics', 'inner'], name='proj_Y'
-                )
-            ]
-        }
-
     @property
     def dm(self):
         return self._dm
@@ -153,7 +130,8 @@ class QuantumCircuit(ABC, nn.Module):
                 if _gate.para is None:
                     _headline = f"{_gate.name}{_oq}|None-TRANS"
                 else:
-                    _headline = f"{_gate.name}{_oq}|({_gate.para.item():.3f})-TRANS".replace('.', ';')
+                    _para_info = _gate.para.item() if isinstance(_gate.para, Tensor) else _gate.para
+                    _headline = f"{_gate.name}{_oq}|({_para_info:.3f})-TRANS".replace('.', ';')
 
                 self._add_module(_gate, _oq, _headline)
             else:
@@ -209,7 +187,8 @@ class QuantumCircuit(ABC, nn.Module):
             oqs = [oqs]
         from .QuantumGates.XGates import RXGate
 
-        _headline = f"RX{oqs}|({theta.item():.3f})".replace('.', ';')
+        _para_info = theta.item() if isinstance(theta, Tensor) else theta
+        _headline = f"RX{oqs}|({_para_info:.3f})".replace('.', ';')
 
         self._add_module(RXGate(theta, _ideal, dtype=self.dtype, device=self.device), oqs, _headline)
 
@@ -218,7 +197,8 @@ class QuantumCircuit(ABC, nn.Module):
             oqs = [oqs]
         from .QuantumGates.YGates import RYGate
 
-        _headline = f"RY{oqs}|({theta.item():.3f})".replace('.', ';')
+        _para_info = theta.item() if isinstance(theta, Tensor) else theta
+        _headline = f"RY{oqs}|({_para_info:.3f})".replace('.', ';')
 
         self._add_module(RYGate(theta, _ideal, dtype=self.dtype, device=self.device), oqs, _headline)
 
@@ -227,7 +207,8 @@ class QuantumCircuit(ABC, nn.Module):
             oqs = [oqs]
         from .QuantumGates.ZGates import RZGate
 
-        _headline = f"RZ{oqs}|({theta.item():.3f})".replace('.', ';')
+        _para_info = theta.item() if isinstance(theta, Tensor) else theta
+        _headline = f"RZ{oqs}|({_para_info:.3f})".replace('.', ';')
 
         self._add_module(RZGate(theta, _ideal, dtype=self.dtype, device=self.device), oqs, _headline)
 
@@ -236,7 +217,8 @@ class QuantumCircuit(ABC, nn.Module):
         if not self.realNoise or _ideal:
             from .QuantumGates.XGates import RXXGate
 
-            _headline = f"RXX{oqs}|({theta.item():.3f})".replace('.', ';')
+            _para_info = theta.item() if isinstance(theta, Tensor) else theta
+            _headline = f"RXX{oqs}|({_para_info:.3f})".replace('.', ';')
 
             self._add_module(RXXGate(theta, _ideal, dtype=self.dtype, device=self.device), oqs, _headline)
         else:
@@ -251,7 +233,8 @@ class QuantumCircuit(ABC, nn.Module):
         if not self.realNoise or _ideal:
             from .QuantumGates.YGates import RYYGate
 
-            _headline = f"RYY{oqs}|({theta.item():.3f})".replace('.', ';')
+            _para_info = theta.item() if isinstance(theta, Tensor) else theta
+            _headline = f"RYY{oqs}|({_para_info:.3f})".replace('.', ';')
 
             self._add_module(RYYGate(theta, _ideal, dtype=self.dtype, device=self.device), oqs, _headline)
         else:
@@ -266,7 +249,8 @@ class QuantumCircuit(ABC, nn.Module):
         if not self.realNoise or _ideal:
             from .QuantumGates.ZGates import RZZGate
 
-            _headline = f"RZZ{oqs}|({theta.item():.3f})".replace('.', ';')
+            _para_info = theta.item() if isinstance(theta, Tensor) else theta
+            _headline = f"RZZ{oqs}|({_para_info:.3f})".replace('.', ';')
 
             self._add_module(RZZGate(theta, _ideal, dtype=self.dtype, device=self.device), oqs, _headline)
         else:
@@ -364,7 +348,8 @@ class QuantumCircuit(ABC, nn.Module):
             oqs = [oqs]
         from .QuantumGates.PhaseGates import PGate
 
-        _headline = f"P{oqs}|({theta.item():.3f})".replace('.', ';')
+        _para_info = theta.item() if isinstance(theta, Tensor) else theta
+        _headline = f"P{oqs}|({_para_info:.3f})".replace('.', ';')
 
         self._add_module(PGate(theta, _ideal, dtype=self.dtype, device=self.device), oqs, _headline)
 
@@ -374,7 +359,8 @@ class QuantumCircuit(ABC, nn.Module):
         if not self.realNoise or _ideal:
             from .QuantumGates.PhaseGates import CPGate
 
-            _headline = f"CP{oqs}|({theta.item():.3f})".replace('.', ';')
+            _para_info = theta.item() if isinstance(theta, Tensor) else theta
+            _headline = f"CP{oqs}|({_para_info:.3f})".replace('.', ';')
 
             self._add_module(CPGate(theta, _ideal, dtype=self.dtype, device=self.device), oqs, _headline)
         else:
@@ -417,7 +403,8 @@ class QuantumCircuit(ABC, nn.Module):
             oqs = [oqs]
         from .QuantumGates.SingleGates import U1Gate
 
-        _headline = f"U1{oqs}|({theta.item():.3f})".replace('.', ';')
+        _para_info = theta.item() if isinstance(theta, Tensor) else theta
+        _headline = f"U1{oqs}|({_para_info:.3f})".replace('.', ';')
 
         self._add_module(U1Gate(theta, _ideal, dtype=self.dtype, device=self.device), oqs, _headline)
 
@@ -426,7 +413,9 @@ class QuantumCircuit(ABC, nn.Module):
             oqs = [oqs]
         from .QuantumGates.SingleGates import U2Gate
 
-        _headline = f"U2{oqs}|(P{phi.item():3f})-(L{lam.item():3f})".replace('.', ';')
+        _phi_info = phi.item() if isinstance(phi, Tensor) else phi
+        _lam_info = lam.item() if isinstance(lam, Tensor) else lam
+        _headline = f"U2{oqs}|(P{_phi_info:3f})-(L{_lam_info:3f})".replace('.', ';')
 
         self._add_module(U2Gate(phi, lam, _ideal, dtype=self.dtype, device=self.device), oqs, _headline)
 
@@ -436,7 +425,10 @@ class QuantumCircuit(ABC, nn.Module):
             oqs = [oqs]
         from .QuantumGates.SingleGates import U3Gate
 
-        _headline = f"U3{oqs}|(T{theta.item():3f})-(P{phi.item():3f})-(L{lam.item():3f})".replace('.', ';')
+        _theta_info = theta.item() if isinstance(theta, Tensor) else theta
+        _phi_info = phi.item() if isinstance(phi, Tensor) else phi
+        _lam_info = lam.item() if isinstance(lam, Tensor) else lam
+        _headline = f"U3{oqs}|(T{_theta_info:3f})-(P{_phi_info:3f})-(L{_lam_info:3f})".replace('.', ';')
 
         self._add_module(U3Gate(theta, phi, lam, _ideal, dtype=self.dtype, device=self.device), oqs, _headline)
 

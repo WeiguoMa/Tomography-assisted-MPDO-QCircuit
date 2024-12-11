@@ -78,7 +78,7 @@ class TensorCircuit(QuantumCircuit):
                 _rEdges.append(contracted_node[_axis])
         return _lEdges, _rEdges
 
-    def _add_gate(self, _qubits: List[tn.AbstractNode],  _layer_num: int, _oqs: List[int], _gate: Optional = None):
+    def _add_gate(self, _qubits: List[tn.AbstractNode], _layer_num: int, _oqs: List[int], _gate: Optional = None):
         """
         Add quantum Gate.
         """
