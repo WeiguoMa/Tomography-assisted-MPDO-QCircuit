@@ -263,12 +263,12 @@ class TensorCircuit(QuantumCircuit):
         self._dmNodes = _state + _qubits_conj
         return self._dmNodes
 
-    def cal_dm(self, reduced_index: Optional[List] = None):
+    def cal_dm(self, reduced_index: Optional[List] = None, _replicate_require: bool = False):
         if reduced_index is None:
             reduced_index = []
 
-        if self._dmNodes is None:
-            _state, _qubits_conj = self._create_dmNodes()
+        if self._dmNodes is None or _replicate_require:
+            _state, _qubits_conj = self._create_dmNodes(reduced_index=reduced_index)
             self._dmNodes = tn.replicate_nodes(_state + _qubits_conj)
         else:
             _nodes = tn.replicate_nodes(self._dmNodes)
