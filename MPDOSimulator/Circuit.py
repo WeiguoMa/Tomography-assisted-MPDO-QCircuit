@@ -24,15 +24,11 @@ MAX_ATTEMPTS = 4
 
 
 class TensorCircuit(QuantumCircuit):
-    def __init__(self, qn: int,
-                 ideal: bool = True,
-                 noiseType: str = 'no',
+    def __init__(self, qn: int, ideal: bool = True, noiseType: str = 'no',
                  chiFileDict: Optional[Dict[str, Dict[str, Any]]] = None,
                  chi: Optional[int] = None, kappa: Optional[int] = None,
-                 tnn_optimize: bool = True,
-                 chip: Optional[str] = None,
-                 dtype: Optional = tc.complex64,
-                 device: Optional[Union[str, int]] = None):
+                 tnn_optimize: bool = True, chip: Optional[str] = None,
+                 dtype: Optional = tc.complex64, device: Optional[Union[str, int]] = None):
         """
         Args:
             ideal: Whether the circuit is ideal.  --> Whether the one-qubit gate is ideal or not.
@@ -44,29 +40,25 @@ class TensorCircuit(QuantumCircuit):
             chip: The name of the chip.
             device: The device of the torch;
         """
-        self.realNoise = True if (noiseType == 'realNoise' and not ideal) else False
-
         super(TensorCircuit, self).__init__(
-            self.realNoise, noiseFiles=chiFileDict,
-            chi=chi, kappa=kappa, tnn_optimize=tnn_optimize, dtype=dtype, device=device
+            noiseFiles=chiFileDict, chi=chi, kappa=kappa, tnn_optimize=tnn_optimize, dtype=dtype, device=device
         )
 
         self.qnumber = qn
-
-        # Noisy Circuit Setting
         self.ideal = ideal
-        self.unified, self.idealNoise = False, False
+        self.noiseType = noiseType.lower()
+        self.Noise = None
 
-        if not self.ideal:
-            self.Noise = NoiseChannel(chip=chip, dtype=self.dtype, device=self.device)
-            if noiseType == 'unified':
-                self.unified = True
-            elif noiseType == 'realNoise':
-                self.realNoise = True
-            elif noiseType == 'idealNoise':
-                self.idealNoise = True
-            else:
-                raise TypeError(f'Noise type "{noiseType}" is not supported yet.')
+        if not ideal:
+            if self.noiseType not in ['unified', 'realnoise', 'idealnoise']:
+                raise ValueError(f'Unsupported noise type: {self.noiseType}')
+            self.Noise = NoiseChannel(chip=chip, dtype=dtype, device=device)
+            self.unified = self.noiseType == 'unified'
+            self.realNoise = self.noiseType == 'realnoise'
+            self.idealNoise = self.noiseType == 'idealnoise'
+
+            if self.realNoise:
+                self._load_exp_tensors()
 
     @staticmethod
     def _assignEdges(contracted_node: tn.AbstractNode, minIdx: int):
@@ -78,134 +70,139 @@ class TensorCircuit(QuantumCircuit):
                 _rEdges.append(contracted_node[_axis])
         return _lEdges, _rEdges
 
+    def _apply_two_qubits_gate(self, _qNodes: List[tn.AbstractNode],
+                               _qubits: List[tn.Edge], gate: QuantumGate, _oqs: List[int]):
+        """
+            Apply a two-qubit gate to the circuit.
+        """
+        _maxIdx, _minIdx = max(_oqs), min(_oqs)
+        if len(_oqs) != 2 and _oqs[0] == _oqs[1]:
+            raise ValueError('Invalid operating qubits for a two-qubit gate.')
+
+        _qNoise = True if f'I_{_maxIdx}' in _qNodes[_maxIdx].axis_names else False
+        _gNoise = (self.idealNoise and not gate.ideal) or self.realNoise
+
+        # Adding depolarization noise channel to Two-qubit gate
+        _gateNode = (
+            tn.Node(tc.einsum('ijklp, klmn -> ijmnp', self.Noise.dpCTensor2,
+                              gate.tensor), name=gate.name,
+                    axis_names=[f'physics_{_oqs[0]}', f'physics_{_oqs[1]}',
+                                f'inner_{_oqs[0]}', f'inner_{_oqs[1]}', f'I_{_maxIdx}{'_N' * _qNoise}'])
+            if _gNoise and not self.realNoise else
+            tn.Node(
+                gate.tensor, name=gate.name,
+                axis_names=[f'physics_{_oqs[0]}', f'physics_{_oqs[1]}', f'inner_{_oqs[0]}', f'inner_{_oqs[1]}'] +
+                           [f'I_{_maxIdx}{'_N' * _qNoise}'] * self.realNoise
+            )
+        )
+
+        _gateNode[f'inner_{_minIdx}'] ^ _qubits[_minIdx], _gateNode[f'inner_{_maxIdx}'] ^ _qubits[_maxIdx]
+
+        _contracted_node = tn.contractors.auto(
+            [_qNodes[_minIdx], _qNodes[_maxIdx], _gateNode], ignore_edge_order=True
+        )
+        EdgeName2AxisName([_contracted_node])
+
+        if _gNoise and _qNoise:
+            tn.flatten_edges(
+                edges=[_contracted_node[f'I_{_maxIdx}'], _contracted_node[f'I_{_maxIdx}_N']],
+                new_edge_name=f'I_{_maxIdx}'
+            )
+            EdgeName2AxisName([_contracted_node])
+
+        _lEdges, _rEdges = self._assignEdges(_contracted_node, _minIdx)
+
+        for attempt in range(MAX_ATTEMPTS):
+            try:
+                _qNodes[_minIdx], _qNodes[_maxIdx], _ = tn.split_node(
+                    _contracted_node, left_edges=_lEdges, right_edges=_rEdges,
+                    left_name=_qNodes[_minIdx].name, right_name=_qNodes[_maxIdx].name,
+                    edge_name=f'bond_{_minIdx}_{_maxIdx}'
+                )
+                EdgeName2AxisName([_qNodes[_minIdx], _qNodes[_maxIdx]])
+                break
+            except LinAlgError:
+                _tensor_norm = tc.norm(_contracted_node.tensor).item()
+                _scale_factor = 1e-10
+                _perturbation_magnitude = tc.finfo(tc.float64).eps * max(_tensor_norm, 1.0) * _scale_factor
+                _perturbation = _perturbation_magnitude * (
+                        tc.randn_like(_contracted_node.tensor) + 1j * tc.randn_like(_contracted_node.tensor)
+                )
+                _contracted_node.set_tensor(_contracted_node.tensor + _perturbation)
+        else:
+            raise LinAlgError(f'SVD converges failed. Multiple times ({MAX_ATTEMPTS}) of perturbation are tried.')
+
+    def _apply_single_qubit_gate(self, _qNodes: List[tn.AbstractNode],
+                                 _qubits: List[tn.Edge], gate: QuantumGate, _oqs: Union[int, List[int]]):
+        _qNoiseList = [f'I_{_idx}' in _qNodes[_idx].axis_names for _idx in _oqs]
+        _gNoiseList = [(self.idealNoise or self.unified) and not gate.ideal for _ in _oqs]
+
+        gate_list = [
+            tn.Node(tc.reshape(
+                tc.einsum('nlm, ljk, ji -> nimk', self.Noise.dpCTensor, self.Noise.apdeCTensor, gate.tensor),
+                (2, 2, -1)), name=gate.name,
+                axis_names=[f'physics_{_idx}', f'inner_{_idx}', f'I_{_idx}{'_N' * _qNoiseList[_j]}'])
+            if _gNoiseList[_j] else
+            tn.Node(gate.tensor, name=gate.name, axis_names=[f'physics_{_idx}', f'inner_{_idx}'])
+            for _j, _idx in enumerate(_oqs)
+        ]
+
+        for _i, _bit in enumerate(_oqs):
+            _gate = gate_list[_i]
+            _connected_edge = _gate[f'inner_{_bit}'] ^ _qubits[_bit]
+
+            _qNodes[_bit] = tn.contract(_connected_edge, name=_qNodes[_bit].name)
+            EdgeName2AxisName([_qNodes[_bit]])
+
+            if _gNoiseList[_i] and _qNoiseList[_i]:
+                tn.flatten_edges(
+                    edges=[_qNodes[_bit][f'I_{_bit}'], _qNodes[_bit][f'I_{_bit}_N']], new_edge_name=f'I_{_bit}'
+                )
+                EdgeName2AxisName([_qNodes[_bit]])
+
     def _add_gate(self, _qubits: List[tn.AbstractNode], _layer_num: int, _oqs: List[int], _gate: Optional = None):
         """
         Add quantum Gate.
         """
+        if not isinstance(_qubits, List):
+            raise TypeError('Qubit must be a list of nodes.')
+        if not isinstance(_oqs, List):
+            raise TypeError('Operating qubits must be a list.')
+        if max(_oqs) >= self.qnumber:
+            raise ValueError(f'Qubit index out of range, max index is Q{max(_oqs)}.')
+
         _qNodes = _qubits
         _qubits = [_qubit[f'physics_{_idx}'] for _idx, _qubit in enumerate(_qubits)]
 
-        gate = self.layers[_layer_num] if _gate is None else _gate
-
-        if not gate:  # Stopping condition
+        gate = _gate or self.layers[_layer_num]
+        if not gate or gate.name == 'MeasureZ':  # Stopping condition
             return None
-        if gate.name == 'MeasureZ':
-            return None  # Lazy Code
-
-        _maxIdx, _minIdx = max(_oqs), min(_oqs)
-
-        if not isinstance(_qubits, List):
-            raise TypeError('Qubit must be a list of nodes.')
         if not isinstance(gate, QuantumGate):
             raise TypeError(f'Gate must be a QuantumGate, current type is {type(gate)}.')
-        if not isinstance(_oqs, List):
-            raise TypeError('Operating qubits must be a list.')
-        if _maxIdx >= self.qnumber:
-            raise ValueError(f'Qubit index out of range, max index is Q{_maxIdx}.')
 
         single = gate.single
-
-        if not single:  # Two-qubit gate
+        if not single:
             """
-                           |p0  |p1                         | w              | p
-                        ___|____|___                    ____|____        ____|____
-                        |          |                    |       |        |       |
-                        |    DG    |---- I        l ----| Qubit |--------| Qubit |---- r
-                        |__________|                    |_______|    k   |_______|
-                           |    |                           |                |
-                           |i0  |i1                         | m              | n
+                           |p0  |p1                                 | p_q            | p_{q+1}
+                        ___|____|___                            ____|____        ____|____
+                        |          |                            |       |        |       |
+                        |    DG    |---- I   Bond_{q-1}_{q} ----| Qubit |--------| Qubit |---- Bond_{q+1}_{q+2}
+                        |__________|                            |_______|    B   |_______|
+                           |    |                                   |                |
+                           |i0  |i1                                 | i_q            | i_{q+1}
             """
-            if len(_oqs) != 2 and _oqs[0] == _oqs[1]:
-                raise ValueError('Invalid operating qubits for a two-qubit gate.')
-
-            _qNoise = True if f'I_{_maxIdx}' in _qNodes[_maxIdx].axis_names else False
-            _gNoise = (self.idealNoise and not gate.ideal) or self.realNoise
-
-            # Adding depolarization noise channel to Two-qubit gate
-            _gateNode = (
-                tn.Node(tc.einsum('ijklp, klmn -> ijmnp', self.Noise.dpCTensor2,
-                                  gate.tensor), name=gate.name,
-                        axis_names=[f'physics_{_oqs[0]}', f'physics_{_oqs[1]}',
-                                    f'inner_{_oqs[0]}', f'inner_{_oqs[1]}', f'I_{_maxIdx}{'_N' * _qNoise}'])
-                if _gNoise and not self.realNoise else
-                tn.Node(
-                    gate.tensor, name=gate.name,
-                    axis_names=[f'physics_{_oqs[0]}', f'physics_{_oqs[1]}', f'inner_{_oqs[0]}', f'inner_{_oqs[1]}'] +
-                               [f'I_{_maxIdx}{'_N' * _qNoise}'] * self.realNoise
-                )
-            )
-
-            _gateNode[f'inner_{_minIdx}'] ^ _qubits[_minIdx], _gateNode[f'inner_{_maxIdx}'] ^ _qubits[_maxIdx]
-
-            _contracted_node = tn.contractors.auto(
-                [_qNodes[_minIdx], _qNodes[_maxIdx], _gateNode], ignore_edge_order=True
-            )
-            EdgeName2AxisName([_contracted_node])
-
-            if _gNoise and _qNoise:
-                tn.flatten_edges(
-                    edges=[_contracted_node[f'I_{_maxIdx}'], _contracted_node[f'I_{_maxIdx}_N']],
-                    new_edge_name=f'I_{_maxIdx}'
-                )
-                EdgeName2AxisName([_contracted_node])
-
-            _lEdges, _rEdges = self._assignEdges(_contracted_node, _minIdx)
-
-            for attempt in range(MAX_ATTEMPTS):
-                try:
-                    _qNodes[_minIdx], _qNodes[_maxIdx], _ = tn.split_node(
-                        _contracted_node, left_edges=_lEdges, right_edges=_rEdges,
-                        left_name=_qNodes[_minIdx].name, right_name=_qNodes[_maxIdx].name,
-                        edge_name=f'bond_{_minIdx}_{_maxIdx}'
-                    )
-                    EdgeName2AxisName([_qNodes[_minIdx], _qNodes[_maxIdx]])
-                    break
-                except LinAlgError:
-                    _tensor_norm = tc.norm(_contracted_node.tensor).item()
-                    _scale_factor = 1e-10
-                    _perturbation_magnitude = tc.finfo(tc.float64).eps * max(_tensor_norm, 1.0) * _scale_factor
-                    _perturbation = _perturbation_magnitude * (
-                            tc.randn_like(_contracted_node.tensor) + 1j * tc.randn_like(_contracted_node.tensor)
-                    )
-                    _contracted_node.set_tensor(_contracted_node.tensor + _perturbation)
-            else:
-                raise LinAlgError(f'SVD converges failed. Multiple times ({MAX_ATTEMPTS}) of perturbation are tried.')
-
+            self._apply_two_qubits_gate(_qNodes, _qubits, gate, _oqs)
         else:
             """
-                            | m                             | i
-                        ____|___                        ____|____
-                        |      |                        |       |   
-                        |  SG  |---- n            l ----| Qubit |---- r
-                        |______|                        |_______|
-                            |                               |
-                            | i                             | j
+                            | p                                  | p_q
+                        ____|___                             ____|____
+                        |      |                             |       |   
+                        |  SG  |---- I    Bond_{q-1}_{q} ----| Qubit |---- Bond_{q}_{q+1}
+                        |______|                             |_______|
+                            |                                    |
+                            | i                                  | i_q
             """
-            _qNoiseList = [f'I_{_idx}' in _qNodes[_idx].axis_names for _idx in _oqs]
-            _gNoiseList = [(self.idealNoise or self.unified) and not gate.ideal for _ in _oqs]
-
-            gate_list = [
-                tn.Node(tc.reshape(
-                    tc.einsum('nlm, ljk, ji -> nimk', self.Noise.dpCTensor, self.Noise.apdeCTensor, gate.tensor),
-                    (2, 2, -1)), name=gate.name,
-                    axis_names=[f'physics_{_idx}', f'inner_{_idx}', f'I_{_idx}{'_N' * _qNoiseList[_j]}'])
-                if _gNoiseList[_j] else
-                tn.Node(gate.tensor, name=gate.name, axis_names=[f'physics_{_idx}', f'inner_{_idx}'])
-                for _j, _idx in enumerate(_oqs)
-            ]
-
-            for _i, _bit in enumerate(_oqs):
-                _gate = gate_list[_i]
-                _connected_edge = _gate[f'inner_{_bit}'] ^ _qubits[_bit]
-
-                _qNodes[_bit] = tn.contract(_connected_edge, name=_qNodes[_bit].name)
-                EdgeName2AxisName([_qNodes[_bit]])
-
-                if _gNoiseList[_i] and _qNoiseList[_i]:
-                    tn.flatten_edges(
-                        edges=[_qNodes[_bit][f'I_{_bit}'], _qNodes[_bit][f'I_{_bit}_N']], new_edge_name=f'I_{_bit}'
-                    )
-                    EdgeName2AxisName([_qNodes[_bit]])
+            self._apply_single_qubit_gate(_qNodes, _qubits, gate, _oqs)
 
     def _create_dmNodes(self, _stateNodes: Optional[List[AbstractNode]] = None, reduced_index: Optional[List] = None):
         _state = tn.replicate_nodes(_stateNodes) if _stateNodes is not None else tn.replicate_nodes(self._stateNodes)
@@ -320,28 +317,29 @@ class TensorCircuit(QuantumCircuit):
                    orientation: Optional[List[int]] = None,
                    reduced: Optional[List[int]] = None,
                    sample_string: bool = True, _tqdm_disable: bool = False) -> Tuple[List[List[int]], Dict]:
-        shots = 1024 if shots is None else shots
-
-        reduced = [] if reduced is None else reduced
+        """
+        Perform sampling with the specified number of shots and orientations.
+        """
+        shots = shots or 1024
+        reduced = reduced or []
         _ori_list = [num for num in range(self.qnumber) if num not in reduced]
         _sampleLength = len(_ori_list)
 
         self._load_projectors()  # Load projectors in memory.
-        orientation = [2] * _sampleLength if orientation is None else orientation
+
+        orientation = orientation or [2] * _sampleLength
         if len(orientation) != _sampleLength:
             raise ValueError(
-                "Length of orientation must be equal to sample length. "
-                "You are probably sampling from a reduced qubit, or providing insufficient orientations."
+                "Length of orientation must match the sample length. Check reduced or unmeasured qubits."
             )
 
         _nodes4samples = tn.replicate_nodes(self._stateNodes)
-
-        _ori_0 = [i for i, value in enumerate(orientation) if value == 0]
-        _ori_1 = [i for i, value in enumerate(orientation) if value == 1]
-        if _ori_0:
-            self._add_gate(_nodes4samples, 0, _ori_0, MeasureX(dtype=self.dtype, device=self.device))
-        if _ori_1:
-            self._add_gate(_nodes4samples, 0, _ori_1, MeasureY(dtype=self.dtype, device=self.device))
+        for _ori_val, _measure_gate in [(0, MeasureX), (1, MeasureY)]:
+            _indices = [i for i, value in enumerate(orientation) if value == _ori_val]
+            if _indices:
+                self._add_gate(
+                    _nodes4samples, 0, _indices, _measure_gate(dtype=self.dtype, device=self.device)
+                )
 
         _dmNodes, _conj_dmNodes = self._create_dmNodes(_nodes4samples)
         reduce_dmNodes(_dmNodes, _conj_dmNodes, reduced_index=reduced)
@@ -349,45 +347,34 @@ class TensorCircuit(QuantumCircuit):
         _bitStrings = [[] for _ in range(shots)]
         for _i in tqdm(
                 range(shots),
-                desc=f"Processing Shots for scheme - {''.join([self._projectors_string[num] for num in orientation])}",
+                desc=f"Sampling (scheme-{''.join([self._projectors_string[num] for num in orientation])})",
                 disable=_tqdm_disable
         ):
             _choices = [-1] * _sampleLength
             for _j in range(_sampleLength):  # _j: index in un-reduced dmNodes.
                 _choices[_j] = self._conditional_sample(
-                    _choices[:_j], _dmNodes, _conj_dmNodes,
-                    _idx=_j, _ori_list=_ori_list, _orientations=orientation
+                    _choices[:_j], _dmNodes, _conj_dmNodes, _idx=_j, _ori_list=_ori_list, _orientations=orientation
                 )
             _bitStrings[_i] = _choices
 
         if sample_string:
             _bitStrings = [''.join(map(str, _stringList)) for _stringList in _bitStrings]
 
-        self._samples = _bitStrings
-        self._counts = count_item(_bitStrings)
-
+        self._samples, self._counts = _bitStrings, count_item(_bitStrings)
         return self._samples, self._counts
 
     def randomSample(self,
                      measurement_schemes: List[List[int]], shots_per_scheme: int = 1024,
                      reduced: Optional[List[int]] = None, _tqdm_disable: bool = False) -> List[List[List[int]]]:
         """
-        Args:
-            measurement_schemes: __len__ == M;
-            shots_per_scheme: K;
-            reduced: Reduced subsystem;
-            _tqdm_disable: bool.
-
-        Returns:
-            Measurement results.
+        Perform random sampling for multiple measurement schemes.
         """
         _measurement_outcomes = [
             self.fakeSample(
-                shots=shots_per_scheme, orientation=_scheme, reduced=reduced, sample_string=False, _tqdm_disable=True
+                shots=shots_per_scheme, orientation=scheme, reduced=reduced, sample_string=False, _tqdm_disable=True
             )[0]
-            for _scheme in tqdm(measurement_schemes, desc=f"Random Sampling", disable=_tqdm_disable)
+            for scheme in tqdm(measurement_schemes, desc=f"Random Sampling", disable=_tqdm_disable)
         ]
-
         return _measurement_outcomes
 
     def evolve(self, state: List[tn.AbstractNode]):

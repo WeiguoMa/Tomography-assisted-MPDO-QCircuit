@@ -19,7 +19,6 @@ class QuantumCircuit(ABC, nn.Module):
     """
 
     def __init__(self,
-                 realNoise: bool,
                  noiseFiles: Optional[Dict[str, Dict[str, Any]]] = None,
                  chi: Optional[int] = None, kappa: Optional[int] = None,
                  tnn_optimize: bool = True,
@@ -38,18 +37,14 @@ class QuantumCircuit(ABC, nn.Module):
         self._oqs_list = []
 
         # Noise
-        self.realNoise = realNoise
-        self.noiseFiles = noiseFiles if realNoise else None
+        self.unified, self.realNoise, self.idealNoise = False, False, False
+        self.noiseFiles = noiseFiles
 
         # Density Matrix
         self._initState = None
         self._vector = None
         self._stateNodes, self._dm, self._dmNodes = None, None, None
         self._samples, self._counts = None, None
-
-        #
-        if self.realNoise:
-            self._load_exp_tensors()
 
         self._sequence, self._sequenceT = 0, 0
 
