@@ -43,7 +43,7 @@ def trace_rho(dmNodes: List[tn.AbstractNode]) -> Tensor:
 def trace_rho_rho(dmNodes_0: List[tn.AbstractNode], dmNodes_1: Optional[List[tn.AbstractNode]] = None) -> Tensor:
     _qNum = len(dmNodes_0) // 2
     if dmNodes_1 is not None and len(dmNodes_1) // 2 != _qNum:
-        raise ValueError('Density matrices should have same number of nodes.')
+        raise ValueError('Density matrices must have the same number of nodes.')
 
     _all_nodes = []
     with tn.NodeCollection(_all_nodes):
@@ -97,15 +97,16 @@ def trace_composited_rho2(*dmNodes: List[tn.AbstractNode]) -> Tensor:
     _sliceNum = len(dmNodes)
 
     # For small matrix, there is no need to waste time calculate the cross item with TNN framework.
-        # This is the trade of between Time and Memory.
+    # This is the trade of between Time and Memory.
     subStatus = [dmNodes[0][i][f'physics_{i}'].is_dangling() for i in range(len(dmNodes[0]) // 2)]
     subSize, qnumber = sum(subStatus), len(subStatus)
 
     if subSize <= 12:
-        _rho = zeros(size=(2 ** subSize, 2 ** subSize), dtype=dmNodes[0][0].tensor.dtype, device=dmNodes[0][0].tensor.device)
+        _rho = zeros(size=(2 ** subSize, 2 ** subSize), dtype=dmNodes[0][0].tensor.dtype,
+                     device=dmNodes[0][0].tensor.device)
         for _dmNode in dmNodes:
             out_order = ([_dmNode[i][f'physics_{i}'] for i in range(qnumber) if subStatus[i]] +
-                         [_dmNode[i+qnumber][f'con_physics_{i}'] for i in range(qnumber) if subStatus[i]])
+                         [_dmNode[i + qnumber][f'con_physics_{i}'] for i in range(qnumber) if subStatus[i]])
             try:
                 _rho += tn.contractors.auto(_dmNode, output_edge_order=out_order).tensor.reshape(_rho.shape)
             except ValueError:

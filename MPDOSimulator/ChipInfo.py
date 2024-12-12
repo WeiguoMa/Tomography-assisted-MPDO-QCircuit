@@ -24,31 +24,45 @@ class ChipInformation:
         except AttributeError:
             raise AttributeError(f'Chip: {item} is not supported.')
 
-    def beta4Test(self):
-        self.chipName = 'beta4Test'
-        if self.queryTime is None:
-            self.gateTime = 30
-            self.T1 = 2e11
-            self.T2 = 2e10
-            self.dpc_errorRate = 11e-4
-            self.status = True
+    def configure_chip(self, name: str, gate_time: float, T1: float, T2: float, dpc_error_rate: float, status: bool):
+        self.chipName = name
+        self.gateTime = gate_time
+        self.T1 = T1
+        self.T2 = T2
+        self.dpc_errorRate = dpc_error_rate
+        self.status = status
+
+    def best(self):
+        if self.query_time is None:
+            self.configure_chip(
+                name='best',
+                gate_time=30,
+                T1=2e11,
+                T2=2e10,
+                dpc_error_rate=11e-4,
+                status=True
+            )
         return self
 
-    def worst4Test(self):
-        """Set chip information for the worst4Test scenario."""
-        self.chipName = 'worst4Test'
-        if self.queryTime is None:
-            self.gateTime = 30
-            self.T1 = 2e2
-            self.T2 = 2e1
-            self.dpc_errorRate = 11e-2
-            self.status = True
+    def worst(self):
+        if self.query_time is None:
+            self.configure_chip(
+                name='worst',
+                gate_time=30,
+                T1=2e2,
+                T2=2e1,
+                dpc_error_rate=11e-2,
+                status=True
+            )
         return self
 
     def show_property(self):
-        print('The chip name is: {}'.format(self.chipName))
-        print('The gate time is: {} {}'.format(self.gateTime, self.timeUnit))
-        print('The T1 time is: {} {}'.format(self.T1, self.timeUnit))
-        print('The T2 time is: {} {}'.format(self.T2, self.timeUnit))
-        print('The depolarization error rate is: {}'.format(self.dpc_errorRate))
-        print('The status of the chip is: {}'.format(self.status))
+        """
+        Display the chip properties.
+        """
+        print(f"The chip name is: {self.chipName}")
+        print(f"The gate time is: {self.gateTime} {self.timeUnit}")
+        print(f"The T1 time is: {self.T1} {self.timeUnit}")
+        print(f"The T2 time is: {self.T2} {self.timeUnit}")
+        print(f"The depolarization error rate is: {self.dpc_errorRate}")
+        print(f"The status of the chip is: {self.status}")

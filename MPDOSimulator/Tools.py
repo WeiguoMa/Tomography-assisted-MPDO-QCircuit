@@ -6,14 +6,12 @@ Contact: weiguo.m@iphy.ac.cn
 import itertools
 import warnings
 from collections import Counter
-from copy import deepcopy
 from functools import reduce
 from typing import Optional, List, Union, Dict, cast
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.optimize import minimize
 from tensornetwork import AbstractNode, Node
 from torch import complex64, sqrt, einsum, matmul, trace, cuda, zeros, kron, where, real, eye, diag, Tensor
 from torch import tensor as torch_tensor
@@ -37,6 +35,8 @@ __all__ = [
     'count_item'
 ]
 
+PUBLIC_SQRT2 = 1 / np.sqrt(2)
+
 
 def EdgeName2AxisName(_nodes: List[AbstractNode]):
     r"""
@@ -57,70 +57,62 @@ def EdgeName2AxisName(_nodes: List[AbstractNode]):
 
     for _node in _nodes:
         _axis_names = []
-        for _edge in [_node[i] for i in range(_node.get_rank())]:
-            # hardcode, which is relating to code design from weiguo
-            if 'qr' in _edge.name:
-                _edge.set_name(_edge.name.replace('qr', ''))
-            if 'kp' in _edge.name:
-                _edge.set_name(_edge.name.replace('kp', ''))
-            if 'bond_' in _edge.name:  # Fact that 'bond_a_b' is the same as 'bond_b_a'
-                _s, _b = sorted([int(num) for num in _edge.name.split('_')[1:]])
-                _edge.set_name(f'bond_{_s}_{_b}')
+        for _edge in _node.edges:
+            new_name = _edge.name
+            if 'qr' in new_name or 'kp' in new_name:
+                new_name = new_name.replace('qr', '').replace('kp', '')
+            elif 'bond_' in new_name:
+                _s, _b = sorted(map(int, new_name.split('_')[1:]))
+                new_name = f'bond_{_s}_{_b}'
+            _edge.set_name(new_name)
             _axis_names.append(_edge.name)
         _node.axis_names = _axis_names
 
 
 def ket0(dtype, device: Union[str, int] = 'cpu'):
     r"""
-    Return: Return the state |0>
+    Return: Return the state |0\rangle.
     """
     return torch_tensor([1. + 0.j, 0. + 0.j], dtype=dtype, device=device)
 
 
 def ket1(dtype, device: Union[str, int] = 'cpu'):
     r"""
-    Return: Return the state |1>
+    Return: Return the state |1\rangle.
     """
     return torch_tensor([0. + 0.j, 1. + 0.j], dtype=dtype, device=device)
 
 
 def ket_hadamard(dtype, device: Union[str, int] = 'cpu'):
     r"""
-    Return: Return the state |+>
+    Return: Return the state |+\rangle.
     """
-    return torch_tensor([1. / sqrt(torch_tensor(2.)), 1. / sqrt(torch_tensor(2.))], dtype=dtype, device=device)
+    return PUBLIC_SQRT2 * torch_tensor([1., 1.], dtype=dtype, device=device)
 
 
 def ket_plus(dtype, device: Union[str, int] = 'cpu'):
     r"""
-    Return: Return the state |+>
+    Return: Return the state |+\rangle.
     """
-    return torch_tensor([1. / sqrt(torch_tensor(2.)), 1. / sqrt(torch_tensor(2.))], dtype=dtype, device=device)
+    return PUBLIC_SQRT2 * torch_tensor([1., 1.], dtype=dtype, device=device)
 
 
 def ket_minus(dtype, device: Union[str, int] = 'cpu'):
     r"""
-    Return: Return the state |->
+    Return: Return the state |-\rangle.
     """
-    return torch_tensor([1. / sqrt(torch_tensor(2.)), -1. / sqrt(torch_tensor(2.))], dtype=dtype, device=device)
+    return PUBLIC_SQRT2 * torch_tensor([1., -1.], dtype=dtype, device=device)
 
 
 def create_ket0Series(qnumber: int, dtype=complex64, device: Union[str, int] = 'cpu') -> list:
     r"""
-    create initial qubits
-
-    Args:
-        qnumber: the number of qubits;
-        dtype: the data type of the tensor;
-        device: cpu or gpu.
-
-    Returns:
-        _mps: the initial mps with the state |0> * _number
+    create initial qubits in |0\rangle.
     """
-
+    assert qnumber > 0
     _mps = [
         Node(ket0(dtype, device=device), name='qubit_{}'.format(_ii),
-             axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
+             axis_names=['physics_{}'.format(_ii)])
+        for _ii in range(qnumber)
     ]
     # Initial nodes has no edges need to be connected, which exactly cannot be saying as a MPO.
     return _mps
@@ -128,20 +120,13 @@ def create_ket0Series(qnumber: int, dtype=complex64, device: Union[str, int] = '
 
 def create_ket1Series(qnumber: int, dtype=complex64, device: Union[str, int] = 'cpu') -> list:
     r"""
-    create initial qubits
-
-    Args:
-        qnumber: the number of qubits;
-        dtype: the data type of the tensor;
-        device: cpu or gpu.
-
-    Returns:
-        _mps: the initial mps with the state |1> * _number
+    create initial qubits in |1\rangle.
     """
-
+    assert qnumber > 0
     _mps = [
         Node(ket1(dtype, device=device), name='qubit_{}'.format(_ii),
-             axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
+             axis_names=['physics_{}'.format(_ii)])
+        for _ii in range(qnumber)
     ]
     # Initial nodes has no edges need to be connected, which exactly cannot be saying as a MPO.
     return _mps
@@ -149,64 +134,40 @@ def create_ket1Series(qnumber: int, dtype=complex64, device: Union[str, int] = '
 
 def create_ketHadamardSeries(qnumber: int, dtype=complex64, device: Union[str, int] = 'cpu') -> list:
     r"""
-    create initial qubits
-
-    Args:
-        qnumber: the number of qubits;
-        dtype: the data type of the tensor;
-        device: cpu or gpu.
-
-    Returns:
-        _mps: the initial mps with the state |+> * _number
+    create initial qubits in |+\rangle.
     """
-
+    assert qnumber > 0
     _mps = [
         Node(ket_hadamard(dtype, device=device), name='qubit_{}'.format(_ii),
-             axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
+             axis_names=['physics_{}'.format(_ii)])
+        for _ii in range(qnumber)
     ]
-    # Initial nodes has no edges need to be connected, which exactly cannot be saying as a MPO.
     return _mps
 
 
 def create_ketPlusSeries(qnumber: int, dtype=complex64, device: Union[str, int] = 'cpu') -> list:
     r"""
-    create initial qubits
-
-    Args:
-        qnumber: the number of qubits;
-        dtype: the data type of the tensor;
-        device: cpu or gpu.
-
-    Returns:
-        _mps: the initial mps with the state |+> * _number
+    create initial qubits in |+\range.
     """
-
+    assert qnumber > 0
     _mps = [
         Node(ket_plus(dtype, device=device), name='qubit_{}'.format(_ii),
-             axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
+             axis_names=['physics_{}'.format(_ii)])
+        for _ii in range(qnumber)
     ]
-    # Initial nodes has no edges need to be connected, which exactly cannot be saying as a MPO.
     return _mps
 
 
 def create_ketMinusSeries(qnumber: int, dtype=complex64, device: Union[str, int] = 'cpu') -> list:
     r"""
-    create initial qubits
-
-    Args:
-        qnumber: the number of qubits;
-        dtype: the data type of the tensor;
-        device: cpu or gpu.
-
-    Returns:
-        _mps: the initial mps with the state |-> * _number
+    create initial qubits in |-\range.
     """
-
+    assert qnumber > 0
     _mps = [
         Node(ket_minus(dtype, device=device), name='qubit_{}'.format(_ii),
-             axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
+             axis_names=['physics_{}'.format(_ii)])
+        for _ii in range(qnumber)
     ]
-    # Initial nodes has no edges need to be connected, which exactly cannot be saying as a MPO.
     return _mps
 
 
@@ -224,34 +185,34 @@ def create_ketRandomSeries(qnumber: int, tensor: torch_tensor, dtype=complex64,
     Returns:
         _mps: the initial mps with the state |random> * _number
     """
-
+    assert qnumber > 0
     tensor = tensor.to(dtype=dtype, device=device)
     _mps = [
         Node(tensor, name='qubit_{}'.format(_ii),
-             axis_names=['physics_{}'.format(_ii)]) for _ii in range(qnumber)
+             axis_names=['physics_{}'.format(_ii)])
+        for _ii in range(qnumber)
     ]
-    # Initial nodes has no edges need to be connected, which exactly cannot be saying as a MPO.
     return _mps
 
 
 def tc_expect(oper: torch_tensor, state: torch_tensor) -> torch_tensor:
     """
-        Calculates the expectation value for operator(s) and state(s) in PyTorch,
-        using torch.matmul for matrix multiplication.
+    Calculates the expectation value for operator(s) and state(s) in PyTorch,
+    using torch.matmul for matrix multiplication.
 
-        Parameters
-        ----------
-        oper : torch.Tensor/list
-            A single or a `list` of operators for expectation value.
+    Parameters
+    ----------
+    oper : torch.Tensor/list
+        A single or a `list` of operators for expectation value.
 
-        state : torch.Tensor/list
-            A single or a `list` of quantum state vectors or density matrices.
+    state : torch.Tensor/list
+        A single or a `list` of quantum state vectors or density matrices.
 
-        Returns
-        -------
-        expt : torch.Tensor
-            Expectation value as a PyTorch tensor. Complex if `oper` is not Hermitian.
-        """
+    Returns
+    -------
+    expt : torch.Tensor
+        Expectation value as a PyTorch tensor. Complex if `oper` is not Hermitian.
+    """
 
     def _single_expect(o, s):
         if s.dim() == 1:  # State vector (ket)
@@ -261,16 +222,13 @@ def tc_expect(oper: torch_tensor, state: torch_tensor) -> torch_tensor:
         else:
             raise ValueError("State must be a vector or matrix.")
 
-    # Handling a single operator and state
     if isinstance(oper, Tensor) and isinstance(state, Tensor):
         return _single_expect(oper, state)
 
-    # Handling a list of operators
     elif isinstance(oper, (list, torch_tensor)):
         if isinstance(state, Tensor):
             return torch_tensor([_single_expect(o, state) for o in oper], dtype=state.dtype)
 
-    # Handling a list of states
     elif isinstance(state, (list, torch_tensor)):
         return torch_tensor([_single_expect(oper, x) for x in state], dtype=oper.dtype)
 
@@ -292,10 +250,8 @@ def density2prob(rho_in: torch_tensor, bases: Optional[Dict] = None,
     _qn = int(np.log2(rho_in.shape[0]))  # Number of qubits
 
     if bases is None:
-        # Generate basis states
         _view_basis = [zeros((2 ** _qn, 1), dtype=rho_in.dtype).scatter_(0, torch_tensor([[ii]]), 1) for ii in
                        range(2 ** _qn)]
-        # Generate basis names
         _basis_name = [''.join(ii) for ii in itertools.product('01', repeat=_qn)]
     else:
         try:
@@ -305,10 +261,8 @@ def density2prob(rho_in: torch_tensor, bases: Optional[Dict] = None,
                 'The input bases should be a dict with format {\'Bases\': List[torch_tensor], \'BasesName\': List[str]}'
             )
 
-    # Calculate probabilities
     _prob = [abs(tc_expect(rho_in, base.view(-1))).item() for base in _view_basis]
 
-    # Create dictionary and normalize
     _prob_sum = sum(_prob)
     if _dict:
         return {name: prob / _prob_sum for name, prob in zip(_basis_name, _prob) if tol is None or prob >= tol}
@@ -548,10 +502,7 @@ def name2matrix(operation_name: str, dtype=complex64, device: Union[str, int] = 
         'Z': torch_tensor([[1, 0], [0, -1]], dtype=dtype, device=device)
     }
 
-    # Generate the list of operation matrices
     operation_list = [operations[letter] for letter in operation_name]
-
-    # Compute the tensor product of the matrices
     return reduce(kron, operation_list)
 
 
@@ -596,54 +547,6 @@ def cal_fidelity(rho: torch_tensor, sigma: torch_tensor) -> torch_tensor:
     _trace = sum(sqrt(evs), -1)
 
     return _trace
-
-
-def validDensityMatrix(rho, methodIdx: int = 1, constraints: str = 'eq',
-                       hermitian: bool = True, device: Union[str, int] = 'cpu'):
-    """
-    Produced by Dr.Shi  --- Data Science
-
-    Args:
-        rho: density matrix;
-        methodIdx: 0, 1, 2, refers to different scipy.optimal.minimize methods;
-        constraints: 'eq' or 'ineq';
-        hermitian: True or False;
-        device: cpu or gpu.
-
-    Returns:
-        rho_semi: valid density matrix.
-
-    """
-    # rho = rho/np.trace(rho)
-    if hermitian:
-        rho = 0.5 * (rho + rho.T.conj())
-    rho = rho.to(device='cpu')
-    ps, psi = np.linalg.eigh(rho)
-
-    traceV = 1.0  # trace(rho)
-    fitFunc = lambda p: np.sum(np.abs(p - ps) ** 2)
-    bounds = [(0.0, traceV + 0.001) for _ in range(len(ps))]
-
-    x0 = deepcopy(ps)
-    x0[x0 < 0.0] = 0.0
-    x0 = x0 / np.sum(x0) * traceV
-
-    if constraints == 'eq':
-        cons = ({'type': 'eq', 'fun': lambda p: np.sum(p) - traceV})
-    elif constraints == 'ineq':
-        cons = ({'type': 'ineq', 'fun': lambda p: traceV - np.sum(p)})
-    else:
-        raise ValueError('constraints should be eq or ineq')
-
-    optMethods = ['L-BFGS-B', 'SLSQP', 'COBYLA']
-
-    res = minimize(fitFunc, x0, method=optMethods[methodIdx], constraints=cons, bounds=bounds)
-    newPs = res.x
-
-    psi, newPs = torch_tensor(psi), torch_tensor(newPs, dtype=rho.dtype)
-
-    rho_semi = psi @ np.diag(newPs) @ psi.T.conj()
-    return rho_semi.to(device=device)
 
 
 def count_item(data: Union[List[List[int]], List[str]]):

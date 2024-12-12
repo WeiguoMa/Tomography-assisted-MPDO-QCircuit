@@ -15,7 +15,15 @@ from .Tools import select_device
 
 class QuantumCircuit(ABC, nn.Module):
     """
-    Abstract class for quantum circuit.
+    Abstract class for constructing quantum circuits with noise and tensor network optimizations.
+
+    Attributes:
+        noiseFiles (Optional[Dict[str, Dict[str, Any]]]): Noise model definitions for the circuit.
+        chi (Optional[int]): Bond dimension for tensor networks.
+        kappa (Optional[int]): Additional optimization parameter.
+        tnn_optimize (bool): Whether tensor network optimization is enabled.
+        dtype: Data type for computations.
+        device (Union[str, int]): Device to perform computations ('cpu' or 'cuda').
     """
 
     def __init__(self,
@@ -462,12 +470,9 @@ class QuantumCircuit(ABC, nn.Module):
         self._add_module(Reset1(dtype=self.dtype, device=self.device), oqs, _headline)
 
     def measure(self, oqs: Union[List, int], orientations: Optional[Union[List, int]] = None):
-        if orientations is None:
-            orientations = [2] * len(oqs)
-        if isinstance(oqs, int):
-            oqs = [oqs]
-        if isinstance(orientations, int):
-            orientations = [orientations]
+        orientations = orientations or [2] * len(oqs)
+        oqs = [oqs] if isinstance(oqs, int) else oqs
+        orientations = [orientations] if isinstance(orientations, int) else orientations
 
         from .QuantumGates.SingleGates import MeasureX, MeasureY, MeasureZ
         _measure_map = {0: MeasureX, 1: MeasureY, 2: MeasureZ}

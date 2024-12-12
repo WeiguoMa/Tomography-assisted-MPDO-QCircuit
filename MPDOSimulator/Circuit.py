@@ -275,11 +275,9 @@ class TensorCircuit(QuantumCircuit):
         self._dm = _dm
         return _dm
 
-    def _conditional_sample(self,
-                            _history: List[int],
-                            _dmNodes: List[tn.AbstractNode],
-                            _conj_dmNodes: List[tn.AbstractNode],
-                            _idx: int, _ori_list: List[int], _orientations: List[int]) -> int:
+    def _conditional_sample(self, _history: List[int],
+                            _dmNodes: List[tn.AbstractNode], _conj_dmNodes: List[tn.AbstractNode],
+                            _idx: int, _ori_list: List[int]) -> int:
         _qLoc = _ori_list[_idx]
         _ignored_reduced = _ori_list[_idx + 1:]
 
@@ -353,7 +351,7 @@ class TensorCircuit(QuantumCircuit):
             _choices = [-1] * _sampleLength
             for _j in range(_sampleLength):  # _j: index in un-reduced dmNodes.
                 _choices[_j] = self._conditional_sample(
-                    _choices[:_j], _dmNodes, _conj_dmNodes, _idx=_j, _ori_list=_ori_list, _orientations=orientation
+                    _choices[:_j], _dmNodes, _conj_dmNodes, _idx=_j, _ori_list=_ori_list
                 )
             _bitStrings[_i] = _choices
 

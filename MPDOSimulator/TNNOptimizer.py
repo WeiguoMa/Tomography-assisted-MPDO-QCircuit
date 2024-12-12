@@ -26,11 +26,11 @@ def _randomized_svd(M, n_components: int, n_overSamples: int = 5,
     Randomized SVD for complex-number matrix.
     """
     _m, _n = M.shape
-    _rng = tc.Generator()
+    _rng = tc.Generator(device=M.device)
     if random_state is not None:
         _rng.manual_seed(random_state)
 
-    _Q = tc.randn(_m, n_components + n_overSamples, dtype=tc.complex64, generator=_rng)
+    _Q = tc.randn(_m, n_components + n_overSamples, dtype=M.dtype, device=M.device, generator=_rng)
 
     if n_iter == 'auto':
         n_iter = 6 if _m >= _n else 4
@@ -51,12 +51,6 @@ def _randomized_svd(M, n_components: int, n_overSamples: int = 5,
 def checkConnectivity(_qubits: Union[List[tn.Node], List[tn.AbstractNode]]):
     """
     Check if the qubits have connectivity.
-
-    Args:
-        _qubits: List of qubit nodes.
-
-    Returns:
-        True if qubits are connected, False otherwise.
     """
     if len(_qubits) <= 1:
         return True
@@ -67,19 +61,19 @@ def checkConnectivity(_qubits: Union[List[tn.Node], List[tn.AbstractNode]]):
         return False
 
 
+def _validate_qubit_list(qubits: Union[List[tn.Node], List[tn.AbstractNode]], func_name: str):
+    """
+    Validate that the input is a list of qubit nodes.
+    """
+    if not isinstance(qubits, list):
+        raise TypeError(f'`{func_name}` expects a list of qubit nodes, got {type(qubits).__name__}')
+
+
 def bondTruncate(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: int, regularization: bool = False):
     """
-    Call of qr -> svd.
-
-    Args:
-        _qubits: List of qubits (as nodes).
-        chi: bond dimension.
-        regularization: True for regularization.
-
-    Returns:
-        None: The function modifies the input tensors in-place.
+    Perform bond truncation using QR and SVD.
     """
-    if chi is not None or regularization:
+    if chi or regularization:
         qr_left2right(_qubits)
         svd_right2left(_qubits, chi=chi)
 
@@ -87,20 +81,11 @@ def bondTruncate(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: int,
 def qr_left2right(_qubits: Union[List[tn.Node], List[tn.AbstractNode]]):
     """
     QR decomposition from left to right.
-
-    Args:
-        _qubits: List of qubits (as nodes).
-
-    Returns:
-        None: The function modifies the input tensors in-place.
     """
-    if not isinstance(_qubits, List):
-        raise TypeError('input should be a list of qubits nodes')
-
+    _validate_qubit_list(_qubits, "qr_left2right")
     for _i in range(len(_qubits) - 1):
-        _edges = _qubits[_i].edges
         _left_edges, _right_edges = (
-            [_edge for _edge in _edges if _edge.name != f'bond_{_i}_{_i + 1}'],
+            [_edge for _edge in _qubits[_i].edges if _edge.name != f'bond_{_i}_{_i + 1}'],
             [_qubits[_i][f'bond_{_i}_{_i + 1}']]
         )
 
@@ -118,19 +103,10 @@ def qr_left2right(_qubits: Union[List[tn.Node], List[tn.AbstractNode]]):
 
 
 def svd_right2left(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: int):
-    r"""
-    SVD from right to left.
-
-    Args:
-        _qubits: list of nodes;
-        chi: bond dimension.
-
-    Returns:
-        None: The function modifies the input tensors in-place.
     """
-    if not isinstance(_qubits, List):
-        raise TypeError('input should be a list of qubits nodes')
-
+    SVD from right to left.
+    """
+    _validate_qubit_list(_qubits, "svd_right2left")
     for idx in range(len(_qubits) - 1, 0, -1):
         _left_edges = [name for name in _qubits[idx - 1].axis_names if name not in _qubits[idx].axis_names]
         _right_edges = [name for name in _qubits[idx].axis_names if name not in _qubits[idx - 1].axis_names]
@@ -153,17 +129,9 @@ def svd_right2left(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: in
 
 def svd_left2right(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: int):
     """
-        SVD from left to right.
-
-        Args:
-            _qubits: list of nodes;
-            chi: bond dimension.
-
-        Returns:
-            None: The function modifies the input tensors in-place.
-        """
-    if not isinstance(_qubits, List):
-        raise TypeError('input should be a list of qubits nodes')
+    SVD from left to right.
+    """
+    _validate_qubit_list(_qubits, "svd_left2right")
 
     for idx in range(len(_qubits) - 1):
         _left_edges = [name for name in _qubits[idx].axis_names if name not in _qubits[idx + 1].axis_names]
@@ -187,22 +155,14 @@ def svd_left2right(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: in
 
 def svdKappa_left2right(_qubits: List[tn.AbstractNode], kappa: int):
     """
-    Perform SVD with optional dimension truncation on a list of quantum tensors.
-
-    Args:
-        _qubits (list[tn.Node] or list[tn.AbstractNode]): List of quantum tensors.
-        kappa (int, optional): The truncation dimension. If None, no truncation is performed.
-
-    Returns:
-        None: The function modifies the input tensors in-place.
+    Perform SVD with truncation on quantum tensors.
     """
+    _validate_qubit_list(_qubits, "svdKappa_left2right")
     if kappa is None:
         return None
 
     for _idx, _qubit in enumerate(_qubits):
-        if not f'I_{_idx}' in _qubit.axis_names:
-            continue
-        if cast(int, _qubit[f'I_{_idx}'].dimension) <= kappa:
+        if not f'I_{_idx}' in _qubit.axis_names or cast(int, _qubit[f'I_{_idx}'].dimension) <= kappa:
             continue
 
         _noiseEdge = [_qubit[f'I_{_idx}']]
