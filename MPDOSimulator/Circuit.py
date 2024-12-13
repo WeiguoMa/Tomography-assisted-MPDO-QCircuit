@@ -9,8 +9,7 @@ import tensornetwork as tn
 import torch as tc
 from tensornetwork import AbstractNode
 from torch.linalg import LinAlgError
-from tqdm import tqdm
-from rust_sampler import rust_sampler
+from tqdm import tqdm, trange
 
 from .AbstractCircuit import QuantumCircuit
 from .NoiseChannel import NoiseChannel
@@ -276,7 +275,7 @@ class TensorCircuit(QuantumCircuit):
         self._dm = _dm
         return _dm
 
-    def _conditional_sample(self, _history: List[int]) -> int:
+    def _conditional_prb(self, _history: List[int]) -> float:
         _ori_list: List[int] = self._indices4samples
         _idx = len(_history)
         _qLoc, _ignored_reduced = _ori_list[_idx], _ori_list[_idx + 1:]
@@ -307,16 +306,58 @@ class TensorCircuit(QuantumCircuit):
             ]).tensor
         )
 
-        try:
-            return tc.multinomial(_probs.real + GLOBAL_MINIMUM, num_samples=1).item()
-        except RuntimeError:
-            raise RuntimeError(f"State is illegal, all probs. are 0. Yours are {_probs.real}.")
+        _probs = _probs.real + GLOBAL_MINIMUM
+        if (_probs < 0).sum() > 0:
+            raise RuntimeError(f"State is illegal, and your probability distribution is {_probs}.")
+
+        return (_probs / _probs.sum())[-1].item()
+
+    def _conditional_sample(self, shots: int, _sampleLength: int, _tqdm_disable: bool = False) -> List[List[int]]:
+        _bitStrings = [[]] * shots
+        for _i in trange(shots, desc=f"Sequential Sampling", disable=_tqdm_disable):
+            _choices = [-1] * _sampleLength
+            for _j in range(_sampleLength):
+                _prob = self._conditional_prb(_choices[:_j])
+                _choices[_j] = tc.multinomial(tc.tensor([1 - _prob, _prob]), num_samples=1).item()
+            _bitStrings[_i] = _choices
+        return _bitStrings
+
+    def _conditional_batch_sample(self, shots: int, _sampleLength: int, _tqdm_disable: bool = False) -> List[List[int]]:
+        _sequences = tc.zeros((shots, _sampleLength), dtype=tc.int)
+
+        _layers = [self.Group(history=[], start=0, length=shots)]
+        for _qLoc in trange(_sampleLength, desc=f"Batch Sampling", disable=_tqdm_disable):
+            _new_layer = []
+            for group in _layers:
+                if group.length == 0:
+                    continue
+
+                p1 = self._conditional_prb(group.history)
+                _k1 = int(tc.bernoulli(tc.full((group.length,), p1)).sum())
+                _k0 = group.length - _k1
+                _sequences[group.start: group.start + _k1, _qLoc] = 1
+
+                if _qLoc < _sampleLength - 1:
+                    if _k1 > 0:
+                        one_history = group.history + [1]
+                        _new_layer.append(
+                            self.Group(history=one_history, start=group.start, length=_k1)
+                        )
+                    if _k0 > 0:
+                        zero_history = group.history + [0]
+                        _new_layer.append(
+                            self.Group(history=zero_history, start=group.start + _k1, length=_k0)
+                        )
+            _layers = _new_layer
+
+        return _sequences.tolist()
 
     def fakeSample(self,
                    shots: Optional[int] = None,
                    orientation: Optional[List[int]] = None,
                    reduced: Optional[List[int]] = None,
-                   sample_string: bool = True, _tqdm_disable: bool = False) -> Tuple[List[List[int]], Dict]:
+                   sample_string: bool = True, _tqdm_disable: bool = False,
+                   _require_sequential_sample: bool = False) -> Tuple[List[List[int]], Dict]:
         """
         Perform sampling with the specified number of shots and orientations.
         """
@@ -345,16 +386,17 @@ class TensorCircuit(QuantumCircuit):
         reduce_dmNodes(_dmNodes, _conj_dmNodes, reduced_index=reduced)
         self._nodes4samples, self._indices4samples = (_dmNodes, _conj_dmNodes), _ori_list
 
-        _bitStrings = [[] for _ in range(shots)]
-        for _i in tqdm(
-                range(shots),
-                desc=f"Sampling (scheme-{''.join([self._projectors_string[num] for num in orientation])})",
-                disable=_tqdm_disable
-        ):
-            _choices = [-1] * _sampleLength
-            for _j in range(_sampleLength):  # _j: index in un-reduced dmNodes.
-                _choices[_j] = self._conditional_sample(_choices[:_j])
-            _bitStrings[_i] = _choices
+        print(f'Sample Direction:'
+              f'\n (scheme-{''.join([self._projectors_string[num] for num in orientation])})')
+
+        if _require_sequential_sample:
+            _bitStrings = self._conditional_sample(
+                shots=shots, _sampleLength=_sampleLength, _tqdm_disable=_tqdm_disable
+            )
+        else:
+            _bitStrings = self._conditional_batch_sample(
+                shots=shots, _sampleLength=_sampleLength, _tqdm_disable=_tqdm_disable
+            )
 
         if sample_string:
             _bitStrings = [''.join(map(str, _stringList)) for _stringList in _bitStrings]

@@ -4,6 +4,7 @@ Time: 11.27.2023
 Contact: weiguo.m@iphy.ac.cn
 """
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import List, Union, Optional, Dict, Any
 
 from tensornetwork import AbstractNode, Node
@@ -82,6 +83,12 @@ class QuantumCircuit(ABC, nn.Module):
             )
                 for _ in range(2)]
         }
+
+    @dataclass
+    class Group:
+        history: List[int]
+        start: int
+        length: int
 
     @property
     def dm(self):
