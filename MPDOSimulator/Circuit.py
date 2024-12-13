@@ -386,8 +386,9 @@ class TensorCircuit(QuantumCircuit):
         reduce_dmNodes(_dmNodes, _conj_dmNodes, reduced_index=reduced)
         self._nodes4samples, self._indices4samples = (_dmNodes, _conj_dmNodes), _ori_list
 
-        print(f'Sample Direction:'
-              f'\n (scheme-{''.join([self._projectors_string[num] for num in orientation])})')
+        if not _tqdm_disable:
+            print(f'Sample Direction:'
+                  f'\n (scheme-{''.join([self._projectors_string[num] for num in orientation])})')
 
         if _require_sequential_sample:
             _bitStrings = self._conditional_sample(
