@@ -33,7 +33,7 @@ class ChipInformation:
         self.status = status
 
     def best(self):
-        if self.query_time is None:
+        if self.queryTime is None:
             self.configure_chip(
                 name='best',
                 gate_time=30,
@@ -45,7 +45,7 @@ class ChipInformation:
         return self
 
     def worst(self):
-        if self.query_time is None:
+        if self.queryTime is None:
             self.configure_chip(
                 name='worst',
                 gate_time=30,
