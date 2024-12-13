@@ -55,6 +55,7 @@ class QuantumCircuit(ABC, nn.Module):
         self._samples, self._counts = None, None
 
         self._sequence, self._sequenceT = 0, 0
+        self._nodes4samples, self._indices4samples = None, None
 
     def _load_exp_tensors(self):
         self._cz_expTensors, self._cp_expTensors = {}, {}

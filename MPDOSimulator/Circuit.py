@@ -10,6 +10,7 @@ import torch as tc
 from tensornetwork import AbstractNode
 from torch.linalg import LinAlgError
 from tqdm import tqdm
+from rust_sampler import rust_sampler
 
 from .AbstractCircuit import QuantumCircuit
 from .NoiseChannel import NoiseChannel
@@ -275,11 +276,10 @@ class TensorCircuit(QuantumCircuit):
         self._dm = _dm
         return _dm
 
-    def _conditional_sample(self, _history: List[int],
-                            _dmNodes: List[tn.AbstractNode], _conj_dmNodes: List[tn.AbstractNode],
-                            _idx: int, _ori_list: List[int]) -> int:
-        _qLoc = _ori_list[_idx]
-        _ignored_reduced = _ori_list[_idx + 1:]
+    def _conditional_sample(self, _history: List[int]) -> int:
+        _ori_list: List[int] = self._indices4samples
+        _idx = len(_history)
+        _qLoc, _ignored_reduced = _ori_list[_idx], _ori_list[_idx + 1:]
 
         _contract_nodes = []
         with tn.NodeCollection(_contract_nodes):
@@ -288,6 +288,7 @@ class TensorCircuit(QuantumCircuit):
                 for _hisIdx, _his in enumerate(_history)
             ]
 
+            _dmNodes, _conj_dmNodes = self._nodes4samples
             _nodes_intermediate = tn.replicate_nodes([*_dmNodes, *_conj_dmNodes])
             _dmNodes_intermediate, _conj_dmNodes_intermediate = (
                 _nodes_intermediate[:self.qnumber], _nodes_intermediate[self.qnumber:]
@@ -295,8 +296,9 @@ class TensorCircuit(QuantumCircuit):
             reduce_dmNodes(_dmNodes_intermediate, _conj_dmNodes_intermediate, reduced_index=_ignored_reduced)
 
             for _j, (_proj, _con_proj) in enumerate(_proj_s):
-                _proj['proj'] ^ _dmNodes_intermediate[_ori_list[_j]][f'physics_{_ori_list[_j]}']
-                _con_proj['proj'] ^ _conj_dmNodes_intermediate[_ori_list[_j]][f'con_physics_{_ori_list[_j]}']
+                _loc = _ori_list[_j]
+                _proj['proj'] ^ _dmNodes_intermediate[_loc][f'physics_{_loc}']
+                _con_proj['proj'] ^ _conj_dmNodes_intermediate[_loc][f'con_physics_{_loc}']
 
         _probs = tc.diag(
             tn.contractors.auto(_contract_nodes, output_edge_order=[
@@ -341,6 +343,7 @@ class TensorCircuit(QuantumCircuit):
 
         _dmNodes, _conj_dmNodes = self._create_dmNodes(_nodes4samples)
         reduce_dmNodes(_dmNodes, _conj_dmNodes, reduced_index=reduced)
+        self._nodes4samples, self._indices4samples = (_dmNodes, _conj_dmNodes), _ori_list
 
         _bitStrings = [[] for _ in range(shots)]
         for _i in tqdm(
@@ -350,9 +353,7 @@ class TensorCircuit(QuantumCircuit):
         ):
             _choices = [-1] * _sampleLength
             for _j in range(_sampleLength):  # _j: index in un-reduced dmNodes.
-                _choices[_j] = self._conditional_sample(
-                    _choices[:_j], _dmNodes, _conj_dmNodes, _idx=_j, _ori_list=_ori_list
-                )
+                _choices[_j] = self._conditional_sample(_choices[:_j])
             _bitStrings[_i] = _choices
 
         if sample_string:
