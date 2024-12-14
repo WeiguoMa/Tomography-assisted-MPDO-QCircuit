@@ -168,6 +168,8 @@ class TensorCircuit(QuantumCircuit):
             raise TypeError('Qubit must be a list of nodes.')
         if not isinstance(_oqs, List):
             raise TypeError('Operating qubits must be a list.')
+        if max(_oqs) is None:
+            return None
         if max(_oqs) >= self.qnumber:
             raise ValueError(f'Qubit index out of range, max index is Q{max(_oqs)}.')
 
@@ -326,7 +328,7 @@ class TensorCircuit(QuantumCircuit):
         _sequences = tc.zeros((shots, _sampleLength), dtype=tc.int)
 
         _layers = [self.Group(history=[], start=0, length=shots)]
-        for _qLoc in trange(_sampleLength, desc=f"Batch Sampling", disable=_tqdm_disable):
+        for _qLoc in trange(_sampleLength, desc=f"Batch Sampling", disable=_tqdm_disable, smoothing=1):
             _new_layer = []
             for group in _layers:
                 if group.length == 0:
@@ -365,8 +367,6 @@ class TensorCircuit(QuantumCircuit):
         reduced = reduced or []
         _ori_list = [num for num in range(self.qnumber) if num not in reduced]
         _sampleLength = len(_ori_list)
-
-        self._load_projectors()  # Load projectors in memory.
 
         orientation = orientation or [2] * _sampleLength
         if len(orientation) != _sampleLength:
@@ -407,13 +407,15 @@ class TensorCircuit(QuantumCircuit):
 
     def randomSample(self,
                      measurement_schemes: List[List[int]], shots_per_scheme: int = 1024,
-                     reduced: Optional[List[int]] = None, _tqdm_disable: bool = False) -> List[List[List[int]]]:
+                     reduced: Optional[List[int]] = None,
+                     _tqdm_disable: bool = False, _require_sequential_sample: bool = False) -> List[List[List[int]]]:
         """
         Perform random sampling for multiple measurement schemes.
         """
         _measurement_outcomes = [
             self.fakeSample(
-                shots=shots_per_scheme, orientation=scheme, reduced=reduced, sample_string=False, _tqdm_disable=True
+                shots=shots_per_scheme, orientation=scheme, reduced=reduced,
+                sample_string=False, _tqdm_disable=True, _require_sequential_sample=_require_sequential_sample
             )[0]
             for scheme in tqdm(measurement_schemes, desc=f"Random Sampling", disable=_tqdm_disable)
         ]

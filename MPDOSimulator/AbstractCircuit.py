@@ -56,6 +56,8 @@ class QuantumCircuit(ABC, nn.Module):
         self._samples, self._counts = None, None
 
         self._sequence, self._sequenceT = 0, 0
+
+        self._load_projectors()  # Load projectors in memory.
         self._nodes4samples, self._indices4samples = None, None
 
     def _load_exp_tensors(self):
@@ -447,7 +449,7 @@ class QuantumCircuit(ABC, nn.Module):
         """
         Add a truncation layer to the circuit.
         """
-        self._oqs_list.append(['None'])
+        self._oqs_list.append([None])
         self.layers.add_module(f'Truncation-{self._sequenceT}', None)
         self._sequenceT += 1
 
@@ -455,7 +457,7 @@ class QuantumCircuit(ABC, nn.Module):
         """
         Add a barrier to the circuit.
         """
-        self._oqs_list.append(['None'])
+        self._oqs_list.append([None])
         self.layers.add_module(f'Barrier-{self._sequenceT}', None)
         self._sequenceT += 1
 
