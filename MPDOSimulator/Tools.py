@@ -15,6 +15,7 @@ import numpy as np
 from tensornetwork import AbstractNode, Node
 from torch import complex64, sqrt, einsum, matmul, trace, cuda, zeros, kron, where, real, eye, diag, Tensor
 from torch import tensor as torch_tensor
+from torch import sum as torch_sum
 from torch.linalg import eigh as torch_eigh
 from torch.linalg import eigvalsh
 
@@ -32,7 +33,9 @@ __all__ = [
     'select_device',
     'tc_expect',
     'EdgeName2AxisName',
-    'count_item'
+    'count_item',
+    'cal_fidelity',
+    'random_measurementScheme'
 ]
 
 PUBLIC_SQRT2 = 1 / np.sqrt(2)
@@ -506,7 +509,7 @@ def name2matrix(operation_name: str, dtype=complex64, device: Union[str, int] = 
     return reduce(kron, operation_list)
 
 
-def sqrt_matrix(density_matrix: torch_tensor) -> torch_tensor:
+def sqrt_matrix(density_matrix: Tensor) -> Tensor:
     r"""Compute the square root matrix of a density matrix where :math:`\rho = \sqrt{\rho} \times \sqrt{\rho}`
 
     Args:
@@ -516,12 +519,13 @@ def sqrt_matrix(density_matrix: torch_tensor) -> torch_tensor:
         (tensor_like): Square root of the density matrix.
     """
     evs, vecs = torch_eigh(density_matrix)
-    evs = where(evs > 0.0, evs, 0.0)
-    evs = real(evs).to(density_matrix.dtype)
-    return vecs @ diag(sqrt(evs)) @ vecs.T.conj()
+    evs = where(evs > 1e-10, evs, torch_tensor(0.0, dtype=density_matrix.dtype, device=density_matrix.device))
+    sqrt_evs = sqrt(evs)
+    sqrt_rho = vecs @ diag(sqrt_evs) @ vecs.conj().transpose(-2, -1)
+    return sqrt_rho
 
 
-def cal_fidelity(rho: torch_tensor, sigma: torch_tensor) -> torch_tensor:
+def cal_fidelity(rho: Tensor, sigma: Tensor) -> Tensor:
     r"""
     Calculate the fidelity between two density matrices.
 
@@ -537,28 +541,43 @@ def cal_fidelity(rho: torch_tensor, sigma: torch_tensor) -> torch_tensor:
     if rho.shape[0] != rho.shape[1] or rho.shape[0] != sigma.shape[1]:
         raise ValueError('The shape of rho and sigma should be square.')
 
-    _sqrt_rho = sqrt_matrix(rho)
-    _sqrt_rho_sigma_sqrt_rho = _sqrt_rho @ sigma @ _sqrt_rho
+    sqrt_rho = sqrt_matrix(rho)
+    sqrt_rho_sigma_sqrt_rho = sqrt_rho @ sigma @ sqrt_rho
 
-    evs = eigvalsh(_sqrt_rho_sigma_sqrt_rho)
-    evs = real(evs)
-    evs = where(evs > 0.0, evs, 0.0)
+    evs = eigvalsh(sqrt_rho_sigma_sqrt_rho)
+    evs = where(evs > 1e-12, evs, torch_tensor(0.0, dtype=evs.dtype, device=evs.device))
+    sqrt_evs = sqrt(evs)
 
-    _trace = sum(sqrt(evs), -1)
-
-    return _trace
+    return torch_sum(sqrt_evs) ** 2
 
 
-def count_item(data: Union[List[List[int]], List[str]]):
+def count_item(data: Union[List[List[Union[int, bool]]], List[str]]):
+    def sort_key(x):
+        if isinstance(x[0], tuple):
+            return int(''.join(str(int(v)) for v in x[0]))
+        elif isinstance(x[0], str):
+            return x[0]
+        else:
+            return int(x[0])
+
     counted = dict(
         Counter(
             [tuple(item) if isinstance(item, list) else item for item in data]
         )
     )
-    sorted_counted = dict(
-        sorted(
-            counted.items(),
-            key=lambda x: int(''.join(map(str, x[0])) if isinstance(x[0], tuple) else x[0])
-        )
-    )
+
+    sorted_counted = dict(sorted(counted.items(), key=sort_key))
     return sorted_counted
+
+def random_measurementScheme(qnumber: int, amount: int) -> List[List[int]]:
+    """
+    Generate random measurement scheme for a given qnumber.
+
+    Args:
+        qnumber: The number of qubits.
+        amount: M. The amount of measurement schemes to generate
+
+    Returns:
+        List[str]: The measurement orientations.
+    """
+    return np.random.randint(0, 3, size=(amount, qnumber)).tolist()

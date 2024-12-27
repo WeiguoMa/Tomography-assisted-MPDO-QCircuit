@@ -347,6 +347,15 @@ class QuantumCircuit(ABC, nn.Module):
 
         self._add_module(SGate(_ideal, dtype=self.dtype, device=self.device), oqs, _headline)
 
+    def sdg(self, oqs: Union[List, int], _ideal: Optional[bool] = None):
+        if isinstance(oqs, int):
+            oqs = [oqs]
+        from .QuantumGates.PhaseGates import SDGGate
+
+        _headline = f"SDG{oqs}|None"
+
+        self._add_module(SDGGate(_ideal, dtype=self.dtype, device=self.device), oqs, _headline)
+
     def t(self, oqs: Union[List, int], _ideal: Optional[bool] = None):
         if isinstance(oqs, int):
             oqs = [oqs]

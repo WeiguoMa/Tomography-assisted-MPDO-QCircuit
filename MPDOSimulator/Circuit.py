@@ -19,7 +19,7 @@ from .TNNOptimizer import bondTruncate, svdKappa_left2right, checkConnectivity
 from .Tools import EdgeName2AxisName, count_item
 from .dmOperations import reduce_dmNodes
 
-GLOBAL_MINIMUM = 1e-15
+GLOBAL_MINIMUM = 1e-12
 MAX_ATTEMPTS = 4
 
 
@@ -277,7 +277,7 @@ class TensorCircuit(QuantumCircuit):
         self._dm = _dm
         return _dm
 
-    def _conditional_prb(self, _history: List[int]) -> float:
+    def _conditional_prb(self, _history: List[Union[int, bool]]) -> float:
         _ori_list: List[int] = self._indices4samples
         _idx = len(_history)
         _qLoc, _ignored_reduced = _ori_list[_idx], _ori_list[_idx + 1:]
@@ -285,7 +285,7 @@ class TensorCircuit(QuantumCircuit):
         _contract_nodes = []
         with tn.NodeCollection(_contract_nodes):
             _proj_s = [
-                tn.replicate_nodes(self._projectors[0]) if _his == 0 else tn.replicate_nodes(self._projectors[1])
+                tn.replicate_nodes(self._projectors[0]) if not _his else tn.replicate_nodes(self._projectors[1])
                 for _hisIdx, _his in enumerate(_history)
             ]
 
@@ -324,8 +324,17 @@ class TensorCircuit(QuantumCircuit):
             _bitStrings[_i] = _choices
         return _bitStrings
 
-    def _conditional_batch_sample(self, shots: int, _sampleLength: int, _tqdm_disable: bool = False) -> List[List[int]]:
-        _sequences = tc.zeros((shots, _sampleLength), dtype=tc.int)
+    def _conditional_batch_sample(
+            self, shots: int, _sampleLength: int, _bool: bool = False, _tqdm_disable: bool = False
+    ) -> List[List[int]]:
+        if not _bool:
+            _inner_dtype = tc.int
+            _saving_value = 1
+        else:
+            _inner_dtype = tc.bool
+            _saving_value = True
+
+        _sequences = tc.zeros((shots, _sampleLength), dtype=_inner_dtype)
 
         _layers = [self.Group(history=[], start=0, length=shots)]
         for _qLoc in trange(_sampleLength, desc=f"Batch Sampling", disable=_tqdm_disable, smoothing=1):
@@ -335,9 +344,15 @@ class TensorCircuit(QuantumCircuit):
                     continue
 
                 p1 = self._conditional_prb(group.history)
-                _k1 = int(tc.bernoulli(tc.full((group.length,), p1)).sum())
-                _k0 = group.length - _k1
-                _sequences[group.start: group.start + _k1, _qLoc] = 1
+                if p1 < GLOBAL_MINIMUM:
+                    _k1, _k0 = 0, group.length
+                elif p1 > 1 - GLOBAL_MINIMUM:
+                    _k1, _k0 = group.length, 0
+                else:
+                    _k1 = int(tc.bernoulli(tc.full((group.length,), p1)).sum())
+                    _k0 = group.length - _k1
+
+                _sequences[group.start: group.start + _k1, _qLoc] = _saving_value
 
                 if _qLoc < _sampleLength - 1:
                     if _k1 > 0:
@@ -359,7 +374,8 @@ class TensorCircuit(QuantumCircuit):
                    orientation: Optional[List[int]] = None,
                    reduced: Optional[List[int]] = None,
                    sample_string: bool = True, _tqdm_disable: bool = False,
-                   _require_sequential_sample: bool = False) -> Tuple[List[List[int]], Dict]:
+                   _require_sequential_sample: bool = False,
+                   _require_bool_result: bool = False, _require_counts: bool = True) -> Union[Tuple[List, Dict], List]:
         """
         Perform sampling with the specified number of shots and orientations.
         """
@@ -396,27 +412,35 @@ class TensorCircuit(QuantumCircuit):
             )
         else:
             _bitStrings = self._conditional_batch_sample(
-                shots=shots, _sampleLength=_sampleLength, _tqdm_disable=_tqdm_disable
+                shots=shots, _sampleLength=_sampleLength, _tqdm_disable=_tqdm_disable, _bool=_require_bool_result
             )
 
-        if sample_string:
+        if sample_string and not _require_bool_result:
             _bitStrings = [''.join(map(str, _stringList)) for _stringList in _bitStrings]
 
-        self._samples, self._counts = _bitStrings, count_item(_bitStrings)
-        return self._samples, self._counts
+        self._samples = _bitStrings
+
+        if _require_counts:
+            self._counts = count_item(_bitStrings)
+            return self._samples, self._counts
+        else:
+            return self._samples
 
     def randomSample(self,
                      measurement_schemes: List[List[int]], shots_per_scheme: int = 1024,
                      reduced: Optional[List[int]] = None,
-                     _tqdm_disable: bool = False, _require_sequential_sample: bool = False) -> List[List[List[int]]]:
+                     _tqdm_disable: bool = False, _require_sequential_sample: bool = False,
+                     _require_bool_result: bool = False) -> List[List[List[int]]]:
         """
         Perform random sampling for multiple measurement schemes.
         """
         _measurement_outcomes = [
             self.fakeSample(
-                shots=shots_per_scheme, orientation=scheme, reduced=reduced,
-                sample_string=False, _tqdm_disable=True, _require_sequential_sample=_require_sequential_sample
-            )[0]
+                shots=shots_per_scheme, orientation=scheme,
+                reduced=reduced, sample_string=False,
+                _tqdm_disable=True, _require_sequential_sample=_require_sequential_sample,
+                _require_bool_result = _require_bool_result, _require_counts=False
+            )
             for scheme in tqdm(measurement_schemes, desc=f"Random Sampling", disable=_tqdm_disable)
         ]
         return _measurement_outcomes

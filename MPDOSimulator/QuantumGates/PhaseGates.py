@@ -45,6 +45,37 @@ class SGate(QuantumGate):
     def variational(self) -> bool:
         return False
 
+class SDGGate(QuantumGate):
+    """
+    S gate.
+    """
+
+    def __init__(self, ideal: Optional[bool] = None, dtype=complex64, device: Union[str, int] = 'cpu'):
+        super(SDGGate, self).__init__(ideal=ideal, dtype=dtype, device=device)
+
+    @property
+    def name(self):
+        return 'Sdg'
+
+    @property
+    def tensor(self):
+        return torch_tensor(data=[[1, 0], [0, -1j]], dtype=self.dtype, device=self.device)
+
+    @property
+    def rank(self):
+        return 2
+
+    @property
+    def dimension(self):
+        return [2, 2]
+
+    @property
+    def single(self) -> bool:
+        return True
+
+    @property
+    def variational(self) -> bool:
+        return False
 
 class TGate(QuantumGate):
     """

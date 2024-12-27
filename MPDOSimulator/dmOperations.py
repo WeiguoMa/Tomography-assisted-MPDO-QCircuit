@@ -18,7 +18,7 @@ def reduce_dmNodes(qubits_nodes: List[tn.AbstractNode],
     if reduced_index is None:
         return None
     if reduced_index and max(reduced_index) >= len(qubits_nodes):
-        raise ValueError('Reduced index should not be larger than the qubit number.')
+        raise ValueError(f'Reduced index should not be larger than the qubit number. {max(reduced_index)}-{len(qubits_nodes)}')
 
     # Reduced density matrix
     if reduced_index:

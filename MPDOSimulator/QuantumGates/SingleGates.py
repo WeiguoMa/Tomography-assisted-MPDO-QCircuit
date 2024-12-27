@@ -244,8 +244,7 @@ class MeasureX(QuantumGate):
 
     def __init__(self, dtype=complex64, device: Union[str, int] = 'cpu'):
         super(MeasureX, self).__init__(ideal=True, dtype=dtype, device=device)
-        _coefficient = 1 / sqrt(torch_tensor(2, dtype=self.dtype, device=self.device))
-        self._matrix = torch_tensor([[1, 1], [1, -1]], dtype=self.dtype, device=self.device) * _coefficient
+        self._matrix = 1 / np.sqrt(2) * torch_tensor([[1, 1], [1, -1]], dtype=self.dtype, device=self.device)
 
     @property
     def name(self):
@@ -279,8 +278,7 @@ class MeasureY(QuantumGate):
 
     def __init__(self, dtype=complex64, device: Union[str, int] = 'cpu'):
         super(MeasureY, self).__init__(ideal=True, dtype=dtype, device=device)
-        _coefficient = 1 / sqrt(torch_tensor(2, dtype=self.dtype, device=self.device))
-        self._matrix = torch_tensor([[1, -1j], [1, 1j]], dtype=self.dtype, device=self.device) * _coefficient
+        self._matrix = 1 / np.sqrt(2) * torch_tensor([[1, -1j], [1, 1j]], dtype=self.dtype, device=self.device)
 
     @property
     def name(self):
