@@ -83,19 +83,21 @@ class TensorCircuit(QuantumCircuit):
         _gNoise = (self.idealNoise and not gate.ideal) or self.realNoise
 
         # Adding depolarization noise channel to Two-qubit gate
-        _gateNode = (
-            tn.Node(tc.einsum('ijklp, klmn -> ijmnp', self.Noise.dpCTensor2,
-                              gate.tensor), name=gate.name,
-                    axis_names=[f'physics_{_oqs[0]}', f'physics_{_oqs[1]}',
-                                f'inner_{_oqs[0]}', f'inner_{_oqs[1]}', f'I_{_maxIdx}{'_N' * _qNoise}'])
-            if _gNoise and not self.realNoise else
-            tn.Node(
-                gate.tensor, name=gate.name,
-                axis_names=[f'physics_{_oqs[0]}', f'physics_{_oqs[1]}', f'inner_{_oqs[0]}', f'inner_{_oqs[1]}'] +
-                           [f'I_{_maxIdx}{'_N' * _qNoise}'] * self.realNoise
-            )
-        )
+        _gTensor = gate.tensor
+        _gAxis = [f'physics_{_oqs[0]}', f'physics_{_oqs[1]}', f'inner_{_oqs[0]}', f'inner_{_oqs[1]}']
 
+        if _gNoise and not self.realNoise:
+            if not gate.variational:
+                _gTensor = self.noiseTensorDict.setdefault(
+                    gate.name,
+                    tc.einsum('ijklp, klmn -> ijmnp', self.Noise.dpCTensor2, _gTensor)
+                )
+                _gAxis.append(f'I_{_maxIdx}{'_N' * _qNoise}')
+            else:
+                _gTensor = tc.einsum('ijklp, klmn -> ijmnp', self.Noise.dpCTensor2, _gTensor)
+                _gAxis.append(f'I_{_maxIdx}{'_N' * _qNoise}' * self.realNoise)
+
+        _gateNode = tn.Node(_gTensor, name=gate.name, axis_names=_gAxis)
         _gateNode[f'inner_{_minIdx}'] ^ _qubits[_minIdx], _gateNode[f'inner_{_maxIdx}'] ^ _qubits[_maxIdx]
 
         _contracted_node = tn.contractors.optimal(
@@ -135,15 +137,29 @@ class TensorCircuit(QuantumCircuit):
     def _apply_single_qubit_gate(self, _qNodes: List[tn.AbstractNode],
                                  _qubits: List[tn.Edge], gate: QuantumGate, _oqs: Union[int, List[int]]):
         _qNoiseList = [f'I_{_idx}' in _qNodes[_idx].axis_names for _idx in _oqs]
-        _gNoiseList = [(self.idealNoise or self.unified) and not gate.ideal for _ in _oqs]
+        _gNoise = (self.idealNoise or self.unified) and not gate.ideal
+
+        _gTensor = gate.tensor
+        if _gNoise:
+            if not gate.variational:
+                _gTensor = self.noiseTensorDict.setdefault(
+                    gate.name,
+                    tc.einsum(
+                        'nlm, ljk, ji -> nimk', self.Noise.decayTensor, self.Noise.dephasingTensor, _gTensor
+                    ).reshape((2, 2, -1))
+                )
+            else:
+                _gTensor = tc.einsum(
+                    'nlm, ljk, ji -> nimk', self.Noise.decayTensor, self.Noise.dephasingTensor, _gTensor
+                ).reshape((2, 2, -1))
 
         gate_list = [
-            tn.Node(tc.reshape(
-                tc.einsum('nlm, ljk, ji -> nimk', self.Noise.decayTensor, self.Noise.dephasingTensor, gate.tensor),
-                shape=(2, 2, -1)
-            ), name=gate.name, axis_names=[f'physics_{_idx}', f'inner_{_idx}', f'I_{_idx}{'_N' * _qNoiseList[_j]}'])
-            if _gNoiseList[_j] else
-            tn.Node(gate.tensor, name=gate.name, axis_names=[f'physics_{_idx}', f'inner_{_idx}'])
+            tn.Node(
+                _gTensor, name=gate.name,
+                axis_names=[f'physics_{_idx}', f'inner_{_idx}', f'I_{_idx}{'_N' * _qNoiseList[_j]}']
+            )
+            if _gNoise else
+            tn.Node(_gTensor, name=gate.name, axis_names=[f'physics_{_idx}', f'inner_{_idx}'])
             for _j, _idx in enumerate(_oqs)
         ]
 
@@ -154,7 +170,7 @@ class TensorCircuit(QuantumCircuit):
             _qNodes[_bit] = tn.contract(_connected_edge, name=_qNodes[_bit].name)
             EdgeName2AxisName([_qNodes[_bit]])
 
-            if _gNoiseList[_i] and _qNoiseList[_i]:
+            if _gNoise and _qNoiseList[_i]:
                 tn.flatten_edges(
                     edges=[_qNodes[_bit][f'I_{_bit}'], _qNodes[_bit][f'I_{_bit}_N']], new_edge_name=f'I_{_bit}'
                 )
