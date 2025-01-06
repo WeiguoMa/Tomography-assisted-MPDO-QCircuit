@@ -98,7 +98,7 @@ class TensorCircuit(QuantumCircuit):
 
         _gateNode[f'inner_{_minIdx}'] ^ _qubits[_minIdx], _gateNode[f'inner_{_maxIdx}'] ^ _qubits[_maxIdx]
 
-        _contracted_node = tn.contractors.auto(
+        _contracted_node = tn.contractors.optimal(
             [_qNodes[_minIdx], _qNodes[_maxIdx], _gateNode], ignore_edge_order=True
         )
         EdgeName2AxisName([_contracted_node])
@@ -139,9 +139,9 @@ class TensorCircuit(QuantumCircuit):
 
         gate_list = [
             tn.Node(tc.reshape(
-                tc.einsum('nlm, ljk, ji -> nimk', self.Noise.dpCTensor, self.Noise.apdeCTensor, gate.tensor),
-                (2, 2, -1)), name=gate.name,
-                axis_names=[f'physics_{_idx}', f'inner_{_idx}', f'I_{_idx}{'_N' * _qNoiseList[_j]}'])
+                tc.einsum('nlm, ljk, ji -> nimk', self.Noise.decayTensor, self.Noise.dephasingTensor, gate.tensor),
+                shape=(2, 2, -1)
+            ), name=gate.name, axis_names=[f'physics_{_idx}', f'inner_{_idx}', f'I_{_idx}{'_N' * _qNoiseList[_j]}'])
             if _gNoiseList[_j] else
             tn.Node(gate.tensor, name=gate.name, axis_names=[f'physics_{_idx}', f'inner_{_idx}'])
             for _j, _idx in enumerate(_oqs)
@@ -375,7 +375,8 @@ class TensorCircuit(QuantumCircuit):
                    reduced: Optional[List[int]] = None,
                    sample_string: bool = True, _tqdm_disable: bool = False,
                    _require_sequential_sample: bool = False,
-                   _require_bool_result: bool = False, _require_counts: bool = True) -> Union[Tuple[List, Dict], List]:
+                   _require_bool_result: bool = False, _require_counts: bool = True,
+                   _stateNodes4Sample: Optional[List[tn.AbstractNode]] = None) -> Union[Tuple[List, Dict], List]:
         """
         Perform sampling with the specified number of shots and orientations.
         """
@@ -390,7 +391,7 @@ class TensorCircuit(QuantumCircuit):
                 "Length of orientation must match the sample length. Check reduced or unmeasured qubits."
             )
 
-        _nodes4samples = tn.replicate_nodes(self._stateNodes)
+        _nodes4samples = tn.replicate_nodes(self._stateNodes) if _stateNodes4Sample is None else tn.replicate_nodes(_stateNodes4Sample)
         for _ori_val, _measure_gate in [(0, MeasureX), (1, MeasureY)]:
             _indices = [i for i, value in enumerate(orientation) if value == _ori_val]
             if _indices:
@@ -430,7 +431,8 @@ class TensorCircuit(QuantumCircuit):
                      measurement_schemes: List[List[int]], shots_per_scheme: int = 1024,
                      reduced: Optional[List[int]] = None,
                      _tqdm_disable: bool = False, _require_sequential_sample: bool = False,
-                     _require_bool_result: bool = False) -> List[List[List[int]]]:
+                     _require_bool_result: bool = False,
+                     _stateNodes4Sample: Optional[List[tn.AbstractNode]] = None) -> List[List[List[Union[int, bool]]]]:
         """
         Perform random sampling for multiple measurement schemes.
         """
@@ -439,7 +441,8 @@ class TensorCircuit(QuantumCircuit):
                 shots=shots_per_scheme, orientation=scheme,
                 reduced=reduced, sample_string=False,
                 _tqdm_disable=True, _require_sequential_sample=_require_sequential_sample,
-                _require_bool_result = _require_bool_result, _require_counts=False
+                _require_bool_result = _require_bool_result, _require_counts=False,
+                _stateNodes4Sample=_stateNodes4Sample
             )
             for scheme in tqdm(measurement_schemes, desc=f"Random Sampling", disable=_tqdm_disable)
         ]

@@ -20,21 +20,20 @@ import numpy as np
 Tensor = Any
 
 
-def _randomized_svd(torch: Any, M, n_components: int, n_overSamples: int = 5,
+def _randomized_svd(torch: Any, M, n_components: int, n_overSamples: int = 7,
                     n_iter: Union[str, int] = 'auto', random_state: Optional = None):
     """
     Randomized SVD for complex-number matrix.
     """
     _m, _n = M.shape
-    _device = M.device
-    _rng = torch.Generator(device=_device)
+    _rng = torch.Generator()
     if random_state is not None:
         _rng.manual_seed(random_state)
 
-    _Q = torch.randn(_m, n_components + n_overSamples, dtype=M.dtype, generator=_rng, device=M.device)
+    _Q = torch.randn(_m, n_components + n_overSamples, dtype=M.dtype, generator=_rng)
 
     if n_iter == 'auto':
-        n_iter = 6 if _m >= _n else 4
+        n_iter = 3 if _m >= _n else 2
 
     for _ in range(n_iter):
         _Q = M @ (M.T.conj() @ _Q)
@@ -47,6 +46,7 @@ def _randomized_svd(torch: Any, M, n_components: int, n_overSamples: int = 5,
     _u = _Q @ _u
 
     return _u, _s, _vh
+
 
 
 def svd(

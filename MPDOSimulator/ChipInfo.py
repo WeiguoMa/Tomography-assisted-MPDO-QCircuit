@@ -11,6 +11,9 @@ class ChipInformation:
         self.status = None
 
         self.gateTime = None
+        self.bath_rate = None
+        self.dephasing_rate = None
+        self.decay_rate = None
         self.T1 = None
         self.T2 = None
         self.chipName = None
@@ -24,9 +27,15 @@ class ChipInformation:
         except AttributeError:
             raise AttributeError(f'Chip: {item} is not supported.')
 
-    def configure_chip(self, name: str, gate_time: float, T1: float, T2: float, dpc_error_rate: float, status: bool):
+    def configure_chip(
+            self, name: str, gate_time: float, decay_rate: float, dephasing_rate: float, bath_rate: float,
+            T1: float, T2: float, dpc_error_rate: float, status: bool
+    ):
         self.chipName = name
         self.gateTime = gate_time
+        self.bath_rate = bath_rate
+        self.decay_rate = decay_rate
+        self.dephasing_rate = dephasing_rate
         self.T1 = T1
         self.T2 = T2
         self.dpc_errorRate = dpc_error_rate
@@ -37,9 +46,27 @@ class ChipInformation:
             self.configure_chip(
                 name='best',
                 gate_time=30,
+                bath_rate=0.,
+                decay_rate=0.0,
+                dephasing_rate=0.0,
                 T1=2e11,
                 T2=2e10,
                 dpc_error_rate=11e-4,
+                status=True
+            )
+        return self
+
+    def medium(self):
+        if self.queryTime is None:
+            self.configure_chip(
+                name='medium',
+                gate_time=1,
+                bath_rate=0.01,
+                decay_rate=0.98,
+                dephasing_rate=0.02,
+                T1=2e11,
+                T2=2e10,
+                dpc_error_rate=5e-2,
                 status=True
             )
         return self
@@ -49,6 +76,9 @@ class ChipInformation:
             self.configure_chip(
                 name='worst',
                 gate_time=30,
+                bath_rate=0.,
+                decay_rate=0.0,
+                dephasing_rate=0.0,
                 T1=2e2,
                 T2=2e1,
                 dpc_error_rate=11e-2,

@@ -3,14 +3,23 @@ Author: Weiguo Ma
 Time: 11.27.2024
 Contact: weiguo.m@iphy.ac.cn
 """
-from typing import Optional, List, Union
+from typing import Optional, List, Union, Tuple
 
 import tensornetwork as tn
-from torch import Tensor, trace, matmul, zeros
+from torch import Tensor, trace, matmul, zeros, tensor, complex64
+from .Tools import EdgeName2AxisName
+
+
+PAULI_DICT = {
+    0: tensor([[0, 1], [1, 0]]),
+    1: tensor([[0, -1j], [1j, 0]]),
+    2: tensor([[1, 0], [0, -1]])
+}
 
 
 def reduce_dmNodes(qubits_nodes: List[tn.AbstractNode],
                    conj_qubits_nodes: List[tn.AbstractNode],
+                   residual_index: Optional[Union[int, List[int]]],
                    reduced_index: Optional[List[Union[List[int], int]]] = None):
     """
     Reduce nodes in memory.
@@ -130,21 +139,22 @@ def expect(dmNodes: List[tn.AbstractNode],
     oqs = [oqs] if isinstance(oqs, int) else oqs
     observables = [observables] if isinstance(observables, Tensor) else observables
 
-    expectation_values = [Tensor(0)] * len(observables)
+    expectation_values = [Tensor(0.)] * len(observables)
     for j, (obs, oq) in enumerate(zip(observables, oqs)):
         oq = [oq] if isinstance(oq, int) else oq
         _all_nodes = []
         with tn.NodeCollection(_all_nodes):
-            obs_dim, oq_dim = obs.dim(), len(oq)
+            oq_dim = len(oq)
             try:
                 obs = obs.reshape([2] * 2 * oq_dim)
             except RuntimeError:
                 raise ValueError(f'Shape of the No.{j} obs is not valid, which is: {obs.shape}.')
 
+            obs_dim = obs.dim() // 2
             if obs_dim > qnumber or oq_dim > qnumber:
-                raise ValueError(f'Dim of No.{j} - oqs: {obs_dim} or obs: {oq_dim} exceeds the system size.')
+                raise ValueError(f'Dim of No.{j} - oqs: {oq_dim} or obs: {obs_dim} exceeds the system size.')
             if obs_dim != oq_dim:
-                raise ValueError(f'Dim of No.{j} - oqs and obs do not match.')
+                raise ValueError(f'Dim of No.{j} - oqs: {oq_dim} and obs: {obs_dim} do not match.')
 
             _axis_names = [f'physics_{_i}' for _i in oq] + [f'con_physics_{_i}' for _i in oq]
             _obs_node = tn.Node(obs, name=f'obs_{oq}', axis_names=_axis_names)
@@ -160,3 +170,31 @@ def expect(dmNodes: List[tn.AbstractNode],
         expectation_values[j] = tn.contractors.auto(_all_nodes).tensor.real
 
     return expectation_values
+
+def pauli_expect(dmNodes: List[tn.AbstractNode], observables: Union[int, List[int], Tuple], oqs: Union[int, List[int], Tuple]):
+    qnumber = len(dmNodes) // 2
+    _device, _dtype = dmNodes[0].tensor.device, dmNodes[0].tensor.dtype
+
+    oqs = [oqs] if isinstance(oqs, int) else oqs
+    residual_values = list(set(range(qnumber)) - set(oqs))
+    observables = [observables] if isinstance(observables, int) else observables
+
+    all_nodes = []
+    with tn.NodeCollection(all_nodes):
+        dmNodes = tn.replicate_nodes(dmNodes)
+        obs = [
+            tn.Node(
+                PAULI_DICT.get(idx).to(device=_device, dtype=_dtype), axis_names=['physics', 'con_physics']
+            )
+            for idx in observables
+        ]
+
+        for ob, oq in zip(obs, oqs):
+            ob['con_physics'] ^ dmNodes[oq][f'physics_{oq}']
+            ob['physics'] ^ dmNodes[oq + qnumber][f'con_physics_{oq}']
+
+        for idx in residual_values:
+            dmNodes[idx][f'physics_{idx}'] ^ dmNodes[idx + qnumber][f'con_physics_{idx}']
+
+    value = tn.contractors.auto(all_nodes).tensor.real
+    return value

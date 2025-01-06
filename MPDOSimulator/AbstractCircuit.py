@@ -14,6 +14,12 @@ from .RealNoise import czExp_channel, cpExp_channel
 from .Tools import select_device
 
 
+CHIFILENAMES = {
+    'CZ': {'01': './MPDOSimulator/chi/czDefault.mat'},
+    'CP': {}
+}
+
+
 class QuantumCircuit(ABC, nn.Module):
     """
     Abstract class for constructing quantum circuits with noise and tensor network optimizations.
@@ -46,8 +52,9 @@ class QuantumCircuit(ABC, nn.Module):
         self._oqs_list = []
 
         # Noise
+        self.noiseTensorDict = {}
         self.unified, self.realNoise, self.idealNoise = False, False, False
-        self.noiseFiles = noiseFiles
+        self.noiseFiles = noiseFiles if noiseFiles is not None else CHIFILENAMES
 
         # Density Matrix
         self._initState = None
@@ -271,6 +278,20 @@ class QuantumCircuit(ABC, nn.Module):
             self.rz(theta, oq1, True)
             self.cx(oq0, oq1)
 
+    def xx_yy(self,
+              theta: Union[Tensor, float], beta: Union[Tensor, float],
+              control: int, target: int, _ideal: Optional[bool] = None):
+        oqs = [control, target]
+        from .QuantumGates.DoubleGates import XXPlusYYGate
+
+        _theta_info = theta.item() if isinstance(theta, Tensor) else theta
+        _beta_info = beta.item() if isinstance(beta, Tensor) else beta
+        _headline = f"XXPlusYYGate{oqs}|(P{_theta_info:3f})-(L{_beta_info:3f})".replace('.', ';')
+
+        self._add_module(XXPlusYYGate(
+            theta=theta, beta=beta, ideal=_ideal, dtype=self.dtype, device=self.device
+        ), oqs, _headline)
+
     def cx(self, oq0: int, oq1: int, _ideal: Optional[bool] = None):
         oqs = [oq0, oq1]
         if not self.realNoise or _ideal:
@@ -330,6 +351,15 @@ class QuantumCircuit(ABC, nn.Module):
 
         _headline = f"SWAP{oqs}|None"
         self._add_module(SWAPGate(_ideal, dtype=self.dtype, device=self.device), oqs, _headline)
+
+    def pswap(self, theta: Union[float, Tensor], oq0: int, oq1: int, _ideal: Optional[bool] = None):
+        oqs = [oq0, oq1]
+        from .QuantumGates.DoubleGates import PSWAPGate
+
+        _para_info = theta.item() if isinstance(theta, Tensor) else theta
+        _headline = f"PSWAP{oqs}|({_para_info:.3f})".replace('.', ';')
+
+        self._add_module(PSWAPGate(theta, _ideal, dtype=self.dtype, device=self.device), oqs, _headline)
 
     def iswap(self, oq0: int, oq1: int, _ideal: Optional[bool] = None):
         oqs = [oq0, oq1]

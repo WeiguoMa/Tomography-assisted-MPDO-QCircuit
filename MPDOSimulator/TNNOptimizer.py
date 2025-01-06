@@ -176,6 +176,8 @@ def svdKappa_left2right(_qubits: List[tn.AbstractNode], kappa: int):
         EdgeName2AxisName([_U])
 
         _U[f'I_{_idx}'].disconnect()
+        _U[f'I_{_idx}'].set_name(f'I_{_idx}')
+
         _qubits[_idx] = _U
 
 

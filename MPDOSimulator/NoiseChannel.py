@@ -22,7 +22,10 @@ class NoiseChannel:
         self.device = select_device(device)
 
         # chip Info
-        self.chip = (ChipInformation().__getattribute__(chip or 'worst4Test'))()
+        self.chip = (ChipInformation().__getattribute__(chip or 'worst'))()
+        self.bath_rate = self.chip.bath_rate
+        self.decay_rate = self.chip.decay_rate
+        self.dephasing_rate = self.chip.dephasing_rate
         self.T1 = self.chip.T1
         self.T2 = self.chip.T2
         self.GateTime = self.chip.gateTime
@@ -34,9 +37,16 @@ class NoiseChannel:
                             tc.tensor([[1, 0], [0, -1]], dtype=dtype, device=device)]
 
         # Noise channels' tensor
+        self.decayTensor = self.decay(self.decay_rate, self.GateTime)
+        # self.decayTensor2 = self.kron_tensor(self.decayTensor)
+        self.dephasingTensor = self.dephasing(self.dephasing_rate, self.GateTime)
+        # self.dephasingTensor2 = self.kron_tensor(self.dephasingTensor)
         self.dpCTensor = self.depolarization_noise_channel(p=self.dpc_errorRate)
         self.dpCTensor2 = self.depolarization_noise_channel(p=self.dpc_errorRate, qn=2)
         self.apdeCTensor = self.amp_phase_damping_error(time=self.GateTime, T1=self.T1, T2=self.T2)
+
+    # def kron_tensor(self, required_tensor: tc.Tensor):
+    #     return tc.einsum('ij, klm -> ikjlm', self._basisPauli[0], required_tensor)
 
     def depolarization_noise_channel(self, p: float, qn: int = 1) -> tc.Tensor:
         r"""
@@ -125,8 +135,36 @@ class NoiseChannel:
         _apdc_tensor = tc.tensor(
             [
                 [[1, 0], [0, np.sqrt(1 - (_param_T1 + _param_T2))]],
-                [[0, 0], [0, np.sqrt(_param_T2)]], [[0, np.sqrt(_param_T1)],
-                                                    [0, 0]]
+                [[0, 0], [0, np.sqrt(_param_T2)]],
+                [[0, np.sqrt(_param_T1)], [0, 0]]
             ], dtype=self.dtype, device=self.device)
         _apdc_tensor = tc.einsum('ijk -> jki', _apdc_tensor)
         return _apdc_tensor
+
+    def decay(self, gamma: float, gate_time: float):
+        if gate_time <= 0:
+            raise ValueError('The gate time must be greater than 0, or set the gate to IDEAL.')
+
+        _param = 1 - np.exp(- self.bath_rate * gamma * gate_time)
+        _kraus_tensor = tc.tensor(
+            [
+                [[1, 0], [0, np.sqrt(1 - _param)]],     # K_1
+                [[0, np.sqrt(_param)], [0, 0]]          # K_2
+            ], dtype=self.dtype, device=self.device
+        )
+        return _kraus_tensor.permute((1, 2, 0))
+
+    def dephasing(self, gamma: float, gate_time: float):
+        if gate_time <= 0:
+            raise ValueError('The gate time must be greater than 0, or set the gate to IDEAL.')
+
+        _param = 1 - np.exp(- self.bath_rate * gamma * gate_time)
+        _sqrt_p, _sqrt_1_p = np.sqrt(_param), np.sqrt(1 - _param)
+        _kraus_tensor = tc.tensor(
+            [
+                [[_sqrt_1_p, 0], [0, _sqrt_1_p]],       # K_1
+                [[_sqrt_p, 0], [0, 0]],                 # K_2
+                [[0, 0], [0, _sqrt_p]]                  # K_3
+            ], dtype=self.dtype, device=self.device
+        )
+        return _kraus_tensor.permute((1, 2, 0))
