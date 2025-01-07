@@ -20,7 +20,7 @@ chi, kappa = 4, 4
 
 # Establish a quantum circuit
 circuit = Simulator.TensorCircuit(qn=qnumber, ideal=ideal_circuit, noiseType=noiseType,
-                        chiFileDict=chiFileNames, chi=chi, kappa=kappa, chip='beta4Test', dtype=DTYPE, device=DEVICE)
+                        chiFileDict=chiFileNames, chi=chi, kappa=kappa, chip='best', dtype=DTYPE, device=DEVICE)
 
 # Test 1
 # circuit.y(1)
@@ -33,10 +33,8 @@ circuit = Simulator.TensorCircuit(qn=qnumber, ideal=ideal_circuit, noiseType=noi
 
 # GHZ TEST
 circuit.h(0)
-circuit.cnot(0, 1)
-circuit.cnot(1, 2)
-circuit.cnot(2, 3)
-circuit.cnot(3, 4)
+for i in range(qnumber - 1):
+    circuit.cnot(i, i+1)
 
 
 # Set TensorNetwork Truncation
@@ -52,7 +50,7 @@ circuit.evolve(state)
 
 # Function 1: Sample from the given circuit without getting density matrix.
     # This could be slower for small system than getting its full density matrix.
-counts = circuit.fakeSample(1024)[-1]       # This function returns (measurement_outcomes, counts_statistical)
+counts = circuit.sample(1024)[-1]       # This function returns (measurement_outcomes, counts_statistical)
 print(counts)
 
 ## Plot the counts
@@ -89,7 +87,7 @@ print(counts)
 # Function 7: Pauli Measurement:
     # I provide two methods of Pauli measurements:
     # 1. circuit.measure(oqs, orientation) -> This call() could show density matrix and dmNodes and samples.
-    # 2. circuit.fakeSample(shots, orientation, reduced) -> This call() show only samples. reduced: allow to sample from reduced system.
+    # 2. circuit.sample(shots, orientation, reduced) -> This call() show only samples. reduced: allow to sample from reduced system.
 
 
 # To reuse all the property in Nodes,
