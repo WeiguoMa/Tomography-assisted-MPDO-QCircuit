@@ -118,10 +118,8 @@ def svd(
         max_singular_values = s.numel()
 
     num_sing_vals_err = max_singular_values
-
     if max_truncation_error is not None:
-        s_squared_sorted = torch.sort(s ** 2, descending=True).values
-        trunc_errs = torch.sqrt(torch.cumsum(s_squared_sorted, dim=0))
+        trunc_errs = torch.sqrt(torch.cumsum(s ** 2, dim=0))
 
         if relative:
             abs_max_truncation_error = max_truncation_error * s[0]
@@ -129,7 +127,7 @@ def svd(
             abs_max_truncation_error = max_truncation_error
 
         for idx in range(trunc_errs.shape[0] - 1):
-            if trunc_errs[idx + 1] - trunc_errs[idx] <= abs_max_truncation_error:
+            if trunc_errs[-1] - trunc_errs[idx] <= abs_max_truncation_error:
                 num_sing_vals_err = idx + 1
                 break
 
