@@ -48,7 +48,6 @@ def _randomized_svd(torch: Any, M, n_components: int, n_overSamples: int = 7,
     return _u, _s, _vh
 
 
-
 def svd(
         torch: Any,
         tensor: Tensor,
@@ -118,16 +117,21 @@ def svd(
     if max_singular_values is None:
         max_singular_values = s.numel()
 
+    num_sing_vals_err = max_singular_values
+
     if max_truncation_error is not None:
         s_squared_sorted = torch.sort(s ** 2, descending=True).values
         trunc_errs = torch.sqrt(torch.cumsum(s_squared_sorted, dim=0))
+
         if relative:
             abs_max_truncation_error = max_truncation_error * s[0]
         else:
             abs_max_truncation_error = max_truncation_error
-        num_sing_vals_err = torch.nonzero(trunc_errs > abs_max_truncation_error, as_tuple=True)[0].numel()
-    else:
-        num_sing_vals_err = max_singular_values
+
+        for idx in range(trunc_errs.shape[0] - 1):
+            if trunc_errs[idx + 1] - trunc_errs[idx] <= abs_max_truncation_error:
+                num_sing_vals_err = idx + 1
+                break
 
     num_sing_vals_keep = min(max_singular_values, num_sing_vals_err)
 
