@@ -13,9 +13,9 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 from tensornetwork import AbstractNode, Node
-from torch import complex64, sqrt, einsum, matmul, trace, cuda, zeros, kron, where, real, eye, diag, Tensor
-from torch import tensor as torch_tensor
+from torch import complex64, sqrt, einsum, matmul, trace, cuda, zeros, kron, where, eye, diag, Tensor
 from torch import sum as torch_sum
+from torch import tensor as torch_tensor
 from torch.linalg import eigh as torch_eigh
 from torch.linalg import eigvalsh
 
@@ -568,6 +568,7 @@ def count_item(data: Union[List[List[Union[int, bool]]], List[str]]):
 
     sorted_counted = dict(sorted(counted.items(), key=sort_key))
     return sorted_counted
+
 
 def random_measurementScheme(qnumber: int, amount: int) -> List[List[int]]:
     """

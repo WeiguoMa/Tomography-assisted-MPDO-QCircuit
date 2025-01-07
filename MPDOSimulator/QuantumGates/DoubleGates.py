@@ -151,6 +151,7 @@ class SWAPGate(QuantumGate):
     def variational(self) -> bool:
         return False
 
+
 class PSWAPGate(QuantumGate):
     """
     SWAP gate.
@@ -187,7 +188,6 @@ class PSWAPGate(QuantumGate):
     @property
     def variational(self) -> bool:
         return True
-
 
 
 class ArbDoubleGate(QuantumGate):
@@ -244,7 +244,7 @@ class XXPlusYYGate(QuantumGate):
 
     @property
     def tensor(self):
-        _tC, _tS = cos(self.theta/2), -1j * sin(self.theta/2)
+        _tC, _tS = cos(self.theta / 2), -1j * sin(self.theta / 2)
         return torch_tensor(
             data=[[1, 0, 0, 0],
                   [0, _tC, _tS * exp(1j * self.beta), 0],

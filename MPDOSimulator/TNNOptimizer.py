@@ -69,13 +69,19 @@ def _validate_qubit_list(qubits: Union[List[tn.Node], List[tn.AbstractNode]], fu
         raise TypeError(f'`{func_name}` expects a list of qubit nodes, got {type(qubits).__name__}')
 
 
-def bondTruncate(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: int, regularization: bool = False):
+def bondTruncate(
+        _qubits: Union[List[tn.Node], List[tn.AbstractNode]],
+        max_singular_values: Optional[int] = None, max_truncation_err: Optional[float] = None,
+        regularization: bool = False
+):
     """
     Perform bond truncation using QR and SVD.
     """
-    if chi or regularization:
-        qr_left2right(_qubits)
-        svd_right2left(_qubits, chi=chi)
+    if max_singular_values is None and max_truncation_err is None and not regularization:
+        return None
+
+    qr_left2right(_qubits)
+    svd_right2left(_qubits, max_singular_values=max_singular_values, max_truncation_err=max_truncation_err)
 
 
 def qr_left2right(_qubits: Union[List[tn.Node], List[tn.AbstractNode]]):
@@ -102,7 +108,10 @@ def qr_left2right(_qubits: Union[List[tn.Node], List[tn.AbstractNode]]):
         EdgeName2AxisName([_qubits[_i], _qubits[_i + 1]])
 
 
-def svd_right2left(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: int):
+def svd_right2left(
+        _qubits: Union[List[tn.Node], List[tn.AbstractNode]],
+        max_singular_values: Optional[int] = None, max_truncation_err: Optional[float] = None
+):
     """
     SVD from right to left.
     """
@@ -117,17 +126,18 @@ def svd_right2left(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: in
         contracted_two_nodes = tn.contract_between(_qubits[idx - 1], _qubits[idx], name='contract_two_nodes')
         EdgeName2AxisName([contracted_two_nodes])
 
-        _qubits[idx - 1], _qubits[idx], _ = tn.split_node(contracted_two_nodes,
-                                                          left_edges=_left_edges,
-                                                          right_edges=_right_edges,
-                                                          left_name=_qubits[idx - 1].name,
-                                                          right_name=_qubits[idx].name,
-                                                          edge_name=f'bond_{idx - 1}_{idx}',
-                                                          max_singular_values=chi)
+        _qubits[idx - 1], _qubits[idx], _ = tn.split_node(
+            contracted_two_nodes, left_edges=_left_edges, right_edges=_right_edges,
+            left_name=_qubits[idx - 1].name, right_name=_qubits[idx].name, edge_name=f'bond_{idx - 1}_{idx}',
+            max_singular_values=max_singular_values, max_truncation_err=max_truncation_err, relative=True
+        )
         EdgeName2AxisName([_qubits[idx - 1], _qubits[idx]])
 
 
-def svd_left2right(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: int):
+def svd_left2right(
+        _qubits: Union[List[tn.Node], List[tn.AbstractNode]],
+        max_singular_values: int, max_truncation_err: Optional[float] = None
+):
     """
     SVD from left to right.
     """
@@ -143,34 +153,40 @@ def svd_left2right(_qubits: Union[List[tn.Node], List[tn.AbstractNode]], chi: in
         contracted_two_nodes = tn.contract_between(_qubits[idx], _qubits[idx + 1], name='contract_two_nodes')
         EdgeName2AxisName([contracted_two_nodes])
 
-        _qubits[idx], _qubits[idx + 1], _ = tn.split_node(contracted_two_nodes,
-                                                          left_edges=_left_edges,
-                                                          right_edges=_right_edges,
-                                                          left_name=_qubits[idx].name,
-                                                          right_name=_qubits[idx + 1].name,
-                                                          edge_name=f'bond_{idx}_{idx + 1}',
-                                                          max_singular_values=chi)
+        _qubits[idx], _qubits[idx + 1], _ = tn.split_node(
+            contracted_two_nodes, left_edges=_left_edges, right_edges=_right_edges,
+            left_name=_qubits[idx].name, right_name=_qubits[idx + 1].name, edge_name=f'bond_{idx}_{idx + 1}',
+            max_singular_values=max_singular_values, max_truncation_err=max_truncation_err, relative=True
+        )
         EdgeName2AxisName([_qubits[idx], _qubits[idx + 1]])
 
 
-def svdKappa_left2right(_qubits: List[tn.AbstractNode], kappa: int):
+def svdKappa_left2right(
+        _qubits: List[tn.AbstractNode],
+        max_singular_values: Optional[int] = None, max_truncation_err: Optional[float] = None
+):
     """
     Perform SVD with truncation on quantum tensors.
     """
-    _validate_qubit_list(_qubits, "svdKappa_left2right")
-    if kappa is None:
+    if max_singular_values is None and max_truncation_err is None:
         return None
 
+    _validate_qubit_list(_qubits, "svdKappa_left2right")
     for _idx, _qubit in enumerate(_qubits):
-        if not f'I_{_idx}' in _qubit.axis_names or cast(int, _qubit[f'I_{_idx}'].dimension) <= kappa:
+        if (
+                max_singular_values is not None and
+                (not f'I_{_idx}' in _qubit.axis_names or cast(int,
+                                                              _qubit[f'I_{_idx}'].dimension) <= max_singular_values)
+        ):
             continue
 
         _noiseEdge = [_qubit[f'I_{_idx}']]
         _otherEdges = [edge for edge in _qubit.edges if edge != _noiseEdge[0]]
 
         _U, _S, _, _ = tn.split_node_full_svd(
-            _qubit, left_edges=_otherEdges, right_edges=_noiseEdge, max_singular_values=kappa,
-            left_name=f'qubit_{_idx}', right_edge_name=f'kpI_{_idx}'
+            _qubit, left_edges=_otherEdges, right_edges=_noiseEdge, max_singular_values=max_singular_values,
+            left_name=f'qubit_{_idx}', right_edge_name=f'kpI_{_idx}',
+            max_truncation_err=max_truncation_err, relative=True
         )
         _U = tn.contract_between(_U, _S, name=_qubit.name)
         EdgeName2AxisName([_U])

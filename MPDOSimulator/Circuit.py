@@ -19,7 +19,7 @@ from .TNNOptimizer import bondTruncate, svdKappa_left2right, checkConnectivity
 from .Tools import EdgeName2AxisName, count_item
 from .dmOperations import reduce_dmNodes
 
-GLOBAL_MINIMUM = 1e-12
+GLOBAL_MINIMUM = 2.718281828459045 * 1e-8
 MAX_ATTEMPTS = 4
 
 
@@ -27,6 +27,7 @@ class TensorCircuit(QuantumCircuit):
     def __init__(self, qn: int, ideal: bool = True, noiseType: str = 'no',
                  chiFileDict: Optional[Dict[str, Dict[str, Any]]] = None,
                  chi: Optional[int] = None, kappa: Optional[int] = None,
+                 max_truncation_err: Optional[float] = None,
                  tnn_optimize: bool = True, chip: Optional[str] = None,
                  dtype: Optional = tc.complex64, device: Optional[Union[str, int]] = None):
         """
@@ -41,7 +42,8 @@ class TensorCircuit(QuantumCircuit):
             device: The device of the torch;
         """
         super(TensorCircuit, self).__init__(
-            noiseFiles=chiFileDict, chi=chi, kappa=kappa, tnn_optimize=tnn_optimize, dtype=dtype, device=device
+            noiseFiles=chiFileDict,
+            chi=chi, kappa=kappa, max_truncation_err=max_truncation_err, dtype=dtype, device=device
         )
 
         self.qnumber = qn
@@ -84,7 +86,8 @@ class TensorCircuit(QuantumCircuit):
 
         # Adding depolarization noise channel to Two-qubit gate
         _gTensor = gate.tensor
-        _gAxis = [f'physics_{_oqs[0]}', f'physics_{_oqs[1]}', f'inner_{_oqs[0]}', f'inner_{_oqs[1]}']
+        _gAxis = [f'physics_{_oqs[0]}', f'physics_{_oqs[1]}', f'inner_{_oqs[0]}', f'inner_{_oqs[1]}'] + [
+            f'I_{_maxIdx}{'_N' * _qNoise}'] * self.realNoise
 
         if _gNoise and not self.realNoise:
             if not gate.variational:
@@ -95,7 +98,6 @@ class TensorCircuit(QuantumCircuit):
                 _gAxis.append(f'I_{_maxIdx}{'_N' * _qNoise}')
             else:
                 _gTensor = tc.einsum('ijklp, klmn -> ijmnp', self.Noise.dpCTensor2, _gTensor)
-                _gAxis.append(f'I_{_maxIdx}{'_N' * _qNoise}' * self.realNoise)
 
         _gateNode = tn.Node(_gTensor, name=gate.name, axis_names=_gAxis)
         _gateNode[f'inner_{_minIdx}'] ^ _qubits[_minIdx], _gateNode[f'inner_{_maxIdx}'] ^ _qubits[_maxIdx]
@@ -119,13 +121,13 @@ class TensorCircuit(QuantumCircuit):
                 _qNodes[_minIdx], _qNodes[_maxIdx], _ = tn.split_node(
                     _contracted_node, left_edges=_lEdges, right_edges=_rEdges,
                     left_name=_qNodes[_minIdx].name, right_name=_qNodes[_maxIdx].name,
-                    edge_name=f'bond_{_minIdx}_{_maxIdx}'
+                    edge_name=f'bond_{_minIdx}_{_maxIdx}', max_truncation_err=GLOBAL_MINIMUM
                 )
                 EdgeName2AxisName([_qNodes[_minIdx], _qNodes[_maxIdx]])
                 break
             except LinAlgError:
                 _tensor_norm = tc.norm(_contracted_node.tensor).item()
-                _scale_factor = 1e-10
+                _scale_factor = GLOBAL_MINIMUM * 1e-2
                 _perturbation_magnitude = tc.finfo(tc.float64).eps * max(_tensor_norm, 1.0) * _scale_factor
                 _perturbation = _perturbation_magnitude * (
                         tc.randn_like(_contracted_node.tensor) + 1j * tc.randn_like(_contracted_node.tensor)
@@ -407,7 +409,8 @@ class TensorCircuit(QuantumCircuit):
                 "Length of orientation must match the sample length. Check reduced or unmeasured qubits."
             )
 
-        _nodes4samples = tn.replicate_nodes(self._stateNodes) if _stateNodes4Sample is None else tn.replicate_nodes(_stateNodes4Sample)
+        _nodes4samples = tn.replicate_nodes(self._stateNodes) if _stateNodes4Sample is None else tn.replicate_nodes(
+            _stateNodes4Sample)
         for _ori_val, _measure_gate in [(0, MeasureX), (1, MeasureY)]:
             _indices = [i for i, value in enumerate(orientation) if value == _ori_val]
             if _indices:
@@ -457,7 +460,7 @@ class TensorCircuit(QuantumCircuit):
                 shots=shots_per_scheme, orientation=scheme,
                 reduced=reduced, sample_string=False,
                 _tqdm_disable=True, _require_sequential_sample=_require_sequential_sample,
-                _require_bool_result = _require_bool_result, _require_counts=False,
+                _require_bool_result=_require_bool_result, _require_counts=False,
                 _stateNodes4Sample=_stateNodes4Sample
             )
             for scheme in tqdm(measurement_schemes, desc=f"Random Sampling", disable=_tqdm_disable)
@@ -469,20 +472,22 @@ class TensorCircuit(QuantumCircuit):
         [state.set_tensor(state.tensor.to(dtype=self.dtype, device=self.device)) for state in self._initState]
 
         for _i, layer in enumerate(self.layers):
-            self._add_gate(state, _i, _oqs=self._oqs_list[_i])
-            self.Truncate = True if layer is None else False
-            #
-            if self.Truncate and self.tnn_optimize:
-                if checkConnectivity(state) and self.chi is not None:
-                    bondTruncate(state, self.chi)
-                if not self.ideal and self.kappa is not None:
-                    svdKappa_left2right(state, kappa=self.kappa)
-
-            self.Truncate = False
+            layer_name = layer.name.lower()
+            match layer_name:
+                case name if "truncate" in name:
+                    if checkConnectivity(state):
+                        bondTruncate(state, max_singular_values=self.chi, max_truncation_err=self.max_truncation_err)
+                        if not self.ideal:
+                            svdKappa_left2right(state, max_singular_values=self.kappa,
+                                                max_truncation_err=self.max_truncation_err)
+                case name if "barrier" in name:
+                    pass
+                case _:
+                    self._add_gate(state, _i, _oqs=self._oqs_list[_i])
 
         # LastLayer noise-truncation
-        if self.tnn_optimize and not self.ideal and self.kappa is not None:
-            svdKappa_left2right(state, kappa=self.kappa)
+        if not self.ideal and not 'truncate' in self.layers[-1].name:
+            svdKappa_left2right(state, max_singular_values=self.kappa, max_truncation_err=self.max_truncation_err)
 
         self._stateNodes = state  # Same memory id()
 

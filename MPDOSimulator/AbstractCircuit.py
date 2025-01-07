@@ -13,7 +13,6 @@ from torch import Tensor, nn, pi, tensor, complex64, sqrt
 from .RealNoise import czExp_channel, cpExp_channel
 from .Tools import select_device
 
-
 CHIFILENAMES = {
     'CZ': {'01': './MPDOSimulator/chi/czDefault.mat'},
     'CP': {}
@@ -36,17 +35,15 @@ class QuantumCircuit(ABC, nn.Module):
     def __init__(self,
                  noiseFiles: Optional[Dict[str, Dict[str, Any]]] = None,
                  chi: Optional[int] = None, kappa: Optional[int] = None,
-                 tnn_optimize: bool = True,
-                 dtype=complex64,
-                 device: Union[str, int] = 'cpu'):
+                 max_truncation_err: Optional[float] = None,
+                 dtype=complex64, device: Union[str, int] = 'cpu'):
         super(QuantumCircuit, self).__init__()
 
         self.device = select_device(device)
         self.dtype = dtype
-        self.Truncate = None
         self.chi = chi
         self.kappa = kappa
-        self.tnn_optimize = tnn_optimize
+        self.max_truncation_err = max_truncation_err
 
         self.layers = nn.Sequential()
         self._oqs_list = []
@@ -62,8 +59,7 @@ class QuantumCircuit(ABC, nn.Module):
         self._stateNodes, self._dm, self._dmNodes = None, None, None
         self._samples, self._counts = None, None
 
-        self._sequence, self._sequenceT = 0, 0
-
+        self._sequence = 0
         self._load_projectors()  # Load projectors in memory.
         self._nodes4samples, self._indices4samples = None, None
 
@@ -488,17 +484,19 @@ class QuantumCircuit(ABC, nn.Module):
         """
         Add a truncation layer to the circuit.
         """
+        from .QuantumGates.AbstractGate import Truncate
+
         self._oqs_list.append([None])
-        self.layers.add_module(f'Truncation-{self._sequenceT}', None)
-        self._sequenceT += 1
+        self.layers.append(Truncate())
 
     def barrier(self):
         """
         Add a barrier to the circuit.
         """
+        from .QuantumGates.AbstractGate import Barrier
+
         self._oqs_list.append([None])
-        self.layers.add_module(f'Barrier-{self._sequenceT}', None)
-        self._sequenceT += 1
+        self.layers.append(Barrier())
 
     def reset0(self, oqs: Union[List, int]):
         if isinstance(oqs, int):

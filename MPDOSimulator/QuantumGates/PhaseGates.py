@@ -45,6 +45,7 @@ class SGate(QuantumGate):
     def variational(self) -> bool:
         return False
 
+
 class SDGGate(QuantumGate):
     """
     S gate.
@@ -76,6 +77,7 @@ class SDGGate(QuantumGate):
     @property
     def variational(self) -> bool:
         return False
+
 
 class TGate(QuantumGate):
     """

@@ -148,8 +148,8 @@ class NoiseChannel:
         _param = 1 - np.exp(- self.bath_rate * gamma * gate_time)
         _kraus_tensor = tc.tensor(
             [
-                [[1, 0], [0, np.sqrt(1 - _param)]],     # K_1
-                [[0, np.sqrt(_param)], [0, 0]]          # K_2
+                [[1, 0], [0, np.sqrt(1 - _param)]],  # K_1
+                [[0, np.sqrt(_param)], [0, 0]]  # K_2
             ], dtype=self.dtype, device=self.device
         )
         return _kraus_tensor.permute((1, 2, 0))
@@ -162,9 +162,9 @@ class NoiseChannel:
         _sqrt_p, _sqrt_1_p = np.sqrt(_param), np.sqrt(1 - _param)
         _kraus_tensor = tc.tensor(
             [
-                [[_sqrt_1_p, 0], [0, _sqrt_1_p]],       # K_1
-                [[_sqrt_p, 0], [0, 0]],                 # K_2
-                [[0, 0], [0, _sqrt_p]]                  # K_3
+                [[_sqrt_1_p, 0], [0, _sqrt_1_p]],  # K_1
+                [[_sqrt_p, 0], [0, 0]],  # K_2
+                [[0, 0], [0, _sqrt_p]]  # K_3
             ], dtype=self.dtype, device=self.device
         )
         return _kraus_tensor.permute((1, 2, 0))

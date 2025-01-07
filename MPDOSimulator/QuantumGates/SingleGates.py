@@ -8,7 +8,7 @@ from typing import Union, Optional
 from warnings import warn
 
 import numpy as np
-from torch import Tensor, complex64, exp, cos, sin, sqrt
+from torch import Tensor, complex64, exp, cos, sin
 from torch import tensor as torch_tensor
 
 from .AbstractGate import QuantumGate

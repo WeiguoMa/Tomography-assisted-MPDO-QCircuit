@@ -6,9 +6,7 @@ Contact: weiguo.m@iphy.ac.cn
 from typing import Optional, List, Union, Tuple
 
 import tensornetwork as tn
-from torch import Tensor, trace, matmul, zeros, tensor, complex64
-from .Tools import EdgeName2AxisName
-
+from torch import Tensor, trace, matmul, zeros, tensor
 
 PAULI_DICT = {
     0: tensor([[0, 1], [1, 0]]),
@@ -19,7 +17,7 @@ PAULI_DICT = {
 
 def reduce_dmNodes(qubits_nodes: List[tn.AbstractNode],
                    conj_qubits_nodes: List[tn.AbstractNode],
-                   residual_index: Optional[Union[int, List[int]]],
+                   residual_index: Optional[Union[int, List[int]]] = None,
                    reduced_index: Optional[List[Union[List[int], int]]] = None):
     """
     Reduce nodes in memory.
@@ -27,7 +25,8 @@ def reduce_dmNodes(qubits_nodes: List[tn.AbstractNode],
     if reduced_index is None:
         return None
     if reduced_index and max(reduced_index) >= len(qubits_nodes):
-        raise ValueError(f'Reduced index should not be larger than the qubit number. {max(reduced_index)}-{len(qubits_nodes)}')
+        raise ValueError(
+            f'Reduced index should not be larger than the qubit number. {max(reduced_index)}-{len(qubits_nodes)}')
 
     # Reduced density matrix
     if reduced_index:
@@ -171,7 +170,9 @@ def expect(dmNodes: List[tn.AbstractNode],
 
     return expectation_values
 
-def pauli_expect(dmNodes: List[tn.AbstractNode], observables: Union[int, List[int], Tuple], oqs: Union[int, List[int], Tuple]):
+
+def pauli_expect(dmNodes: List[tn.AbstractNode], observables: Union[int, List[int], Tuple],
+                 oqs: Union[int, List[int], Tuple]):
     qnumber = len(dmNodes) // 2
     _device, _dtype = dmNodes[0].tensor.device, dmNodes[0].tensor.dtype
 

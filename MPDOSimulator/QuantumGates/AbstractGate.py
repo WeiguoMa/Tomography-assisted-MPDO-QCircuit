@@ -10,6 +10,24 @@ from typing import Optional
 from torch import Tensor, nn, complex64, tensor
 
 
+class Truncate(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.name = 'truncate'
+
+    def forward(self, *args, **kwargs):
+        pass
+
+
+class Barrier(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.name = 'barrier'
+
+    def forward(self, *args, **kwargs):
+        pass
+
+
 class QuantumGate(ABC, nn.Module):
     """
     Base class for quantum gates.
