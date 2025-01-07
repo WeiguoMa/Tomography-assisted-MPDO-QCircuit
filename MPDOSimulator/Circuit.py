@@ -27,8 +27,7 @@ class TensorCircuit(QuantumCircuit):
     def __init__(self, qn: int, ideal: bool = True, noiseType: str = 'no',
                  chiFileDict: Optional[Dict[str, Dict[str, Any]]] = None,
                  chi: Optional[int] = None, kappa: Optional[int] = None,
-                 max_truncation_err: Optional[float] = None,
-                 tnn_optimize: bool = True, chip: Optional[str] = None,
+                 max_truncation_err: Optional[float] = None, chip: Optional[str] = None,
                  dtype: Optional = tc.complex64, device: Optional[Union[str, int]] = None):
         """
         Args:
@@ -387,14 +386,14 @@ class TensorCircuit(QuantumCircuit):
 
         return _sequences.tolist()
 
-    def fakeSample(self,
-                   shots: Optional[int] = None,
-                   orientation: Optional[List[int]] = None,
-                   reduced: Optional[List[int]] = None,
-                   sample_string: bool = True, _tqdm_disable: bool = False,
-                   _require_sequential_sample: bool = False,
-                   _require_bool_result: bool = False, _require_counts: bool = True,
-                   _stateNodes4Sample: Optional[List[tn.AbstractNode]] = None) -> Union[Tuple[List, Dict], List]:
+    def sample(self,
+               shots: Optional[int] = None,
+               orientation: Optional[List[int]] = None,
+               reduced: Optional[List[int]] = None,
+               sample_string: bool = True, _tqdm_disable: bool = False,
+               _require_sequential_sample: bool = False,
+               _require_bool_result: bool = False, _require_counts: bool = True,
+               _stateNodes4Sample: Optional[List[tn.AbstractNode]] = None) -> Union[Tuple[List, Dict], List]:
         """
         Perform sampling with the specified number of shots and orientations.
         """
@@ -456,7 +455,7 @@ class TensorCircuit(QuantumCircuit):
         Perform random sampling for multiple measurement schemes.
         """
         _measurement_outcomes = [
-            self.fakeSample(
+            self.sample(
                 shots=shots_per_scheme, orientation=scheme,
                 reduced=reduced, sample_string=False,
                 _tqdm_disable=True, _require_sequential_sample=_require_sequential_sample,
