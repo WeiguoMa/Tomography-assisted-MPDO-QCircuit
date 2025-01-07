@@ -317,7 +317,7 @@ circuit.evolve(state)
 # Function 1: Sample from the given circuit without getting density matrix.
     # This could be slower for small system than getting its full density matrix.
     # More info., see Function 7.
-counts = circuit.fakeSample(1024)[-1]       # This function returns (measurement_outcomes, counts_statistical)
+counts = circuit.sample(1024)[-1]       # This function returns (measurement_outcomes, counts_statistical)
 print(counts)
 
 ## Plot the counts
@@ -354,7 +354,7 @@ print(counts)
 # Function 7: Pauli Measurement:
     # I provide two methods of Pauli measurements:
     # 1. circuit.measure(oqs, orientation) -> This call() could show density matrix and dmNodes and samples.
-    # 2. circuit.fakeSample(shots, orientation, reduced) -> This call() show only samples. reduced: allow to sample from reduced system.
+    # 2. circuit.sample(shots, orientation, reduced) -> This call() show only samples. reduced: allow to sample from reduced system.
 
 # To reuse all the property in Nodes,
 # I recommend you to use tensornetwork.replicate_nodes() for keeping the original nodes, which are in memory, unchanged.
